@@ -1,10 +1,29 @@
 // Run with PLAYWRIGHT_MODULE pointing to an installed Playwright index.mjs.
 import http from 'node:http'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 const { chromium, webkit } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const root = process.cwd()
+// Chromium's default fake camera has no fixed left and right, so it plays this one-frame
+// Y4M file on a loop instead: red left, blue right, like WebKit's synthetic camera below.
+// I420 planes use BT.601 limited range: red is Y 81, U 90, V 240; blue is Y 41, U 240, V 110.
+function splitCameraFrame (width = 640, height = 480) {
+  const plane = (w, h, left, right) => {
+    const bytes = Buffer.alloc(w * h, right)
+    for (let y = 0; y < h; y++) bytes.fill(left, y * w, y * w + w / 2)
+    return bytes
+  }
+  return Buffer.concat([Buffer.from(`YUV4MPEG2 W${width} H${height} F15:1 Ip A1:1 C420jpeg\nFRAME\n`),
+    plane(width, height, 81, 41), plane(width / 2, height / 2, 90, 240), plane(width / 2, height / 2, 240, 110)])
+}
+const cameraDirectory = process.env.BROWSER === 'webkit' ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'discuss-it-camera-'))
+const cameraFile = cameraDirectory && path.join(cameraDirectory, 'split.y4m')
+if (cameraFile) {
+  process.on('exit', () => fs.rmSync(cameraDirectory, { recursive: true, force: true }))
+  fs.writeFileSync(cameraFile, splitCameraFrame())
+}
 // Runtime assets are served only from a non-default directory, so a hard-coded
 // /assets/discuss-it/ path anywhere in the recorder fails this test. The worker is
 // served from source, not the built copy, so an unbuilt edit is still what is tested.
@@ -22,7 +41,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(source).pipe(res)
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const browser = process.env.BROWSER === 'webkit' ? await webkit.launch({ headless: true }) : await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
+const browser = process.env.BROWSER === 'webkit' ? await webkit.launch({ headless: true }) : await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-video-capture=${cameraFile}`] })
 const watchdog = setTimeout(async () => { console.error('Browser test timed out'); await browser.close() }, 90000)
 const backgrounds = process.env.BACKGROUND ? [process.env.BACKGROUND] : ['none', 'color', 'blur', 'image']
 try {
@@ -90,11 +109,11 @@ try {
       player.src = URL.createObjectURL(clip.blob); player.muted = true
       await Promise.race([player.play(), new Promise((resolve, reject) => setTimeout(() => reject(Error('Playback timed out')), 10000))])
       if (!player.videoWidth) throw Error('Recorded clip cannot play')
-      if (skipAudioOnly && background === 'none') {
-        // Inspect encoded playback, not the preview: synthetic input is red-left,
-        // blue-right, so a saved mirrored clip must be blue-left, red-right.
+      if (background === 'none') {
+        // Inspect encoded playback, not the preview: both browsers' test cameras are
+        // red-left, blue-right, so a saved mirrored clip must be blue-left, red-right.
         const pixels = document.createElement('canvas'); pixels.width = 640; pixels.height = 480
-        const context = pixels.getContext('2d'); context.drawImage(player, 0, 0, 640, 480)
+        const context = pixels.getContext('2d', { willReadFrequently: true }); context.drawImage(player, 0, 0, 640, 480)
         const left = context.getImageData(100, 240, 1, 1).data
         const right = context.getImageData(540, 240, 1, 1).data
         if (!(left[2] > left[0] + 100 && right[0] > right[2] + 100)) throw Error('Saved video is not mirrored')
