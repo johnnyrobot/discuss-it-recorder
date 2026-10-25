@@ -258,5 +258,33 @@ try {
   assert.deepEqual((await page.evaluate(() => window.recordingEvents)).slice(-2), [true, false], 'A take that never finishes still ends `recording`')
   assert.ok(await page.evaluate(() => window.cameraStream.getTracks().every(track => track.readyState === 'ended')), 'A take that never finishes releases the camera and microphone')
   console.log(`PASS a take that never finishes is given up ${waited} ms after Stop & review and asks to record again`)
+  // MediaRecorder can report an error during a take, such as an encoder failure. What it
+  // recorded may be cut short or unplayable, so nothing is offered for review or to the host:
+  // the student sees why and prepares again, with the camera and microphone released and no
+  // Retake for a take that does not exist.
+  await page.evaluate(() => {
+    for (const [name, descriptor] of Object.entries(window.recorderApi)) Object.defineProperty(MediaRecorder.prototype, name, descriptor)
+    const start = MediaRecorder.prototype.start
+    MediaRecorder.prototype.start = function (...args) { window.takeRecorder = this; return start.apply(this, args) }
+  })
+  await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).click()
+  await page.getByRole('button', { name: 'Start recording', exact: true }).waitFor({ timeout: 60000 })
+  const before = await page.evaluate(() => window.recordedEvents.slice())
+  await page.getByRole('button', { name: 'Start recording', exact: true }).click()
+  await page.waitForTimeout(1200)
+  await page.evaluate(() => window.takeRecorder.dispatchEvent(new Event('error')))
+  await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).waitFor({ timeout: 6000 }).catch(async () => {
+    throw Error(`A MediaRecorder error must ask to prepare again: the recorder says "${(await page.getByRole('status').innerText()).trim()}" with ${await page.getByRole('button', { name: 'Retake', exact: true }).count()} Retake button`)
+  })
+  assert.equal(await page.getByRole('alert').innerText(), 'Recording failed. Please retake the clip.')
+  assert.equal(await page.getByRole('button', { name: 'Retake', exact: true }).count(), 0, 'No Retake for a take that does not exist')
+  assert.equal(await page.getByLabel('Review recording', { exact: true }).count(), 0, 'A failed take is not shown for review')
+  assert.equal(await page.getByRole('link', { name: 'Download a copy', exact: true }).count(), 0, 'A failed take is not offered for download')
+  assert.deepEqual(await page.evaluate(() => window.recordedEvents), before, 'A failed take is never emitted')
+  assert.deepEqual((await page.evaluate(() => window.recordingEvents)).slice(-2), [true, false], 'A failed take still ends `recording`')
+  assert.ok(await page.evaluate(() => window.cameraStream.getTracks().every(track => track.readyState === 'ended')), 'A failed take releases the camera and microphone')
+  await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).click()
+  await page.getByRole('button', { name: 'Start recording', exact: true }).waitFor({ timeout: 60000 })
+  console.log('PASS a MediaRecorder error during a take keeps nothing for review and asks to prepare again')
   assert.deepEqual(sent, [], 'The recorder sent a request that was not for its own files')
 } finally { await browser.close(); server.close() }
