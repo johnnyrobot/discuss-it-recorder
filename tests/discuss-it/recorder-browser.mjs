@@ -83,7 +83,7 @@ try {
       MediaDevices.prototype.enumerateDevices = async () => []
     })
   }
-  const result = await page.evaluate(async ({ backgrounds, skipAudioOnly, assetBase, synthetic, expectWorker }) => {
+  const result = await page.evaluate(async ({ backgrounds, assetBase, synthetic, expectWorker }) => {
     if (synthetic && navigator.mediaDevices.getUserMedia.name !== 'syntheticCapture') throw Error('Synthetic capture is not installed; refusing to open a real camera or microphone')
     const { default: Recorder, extensionFor, recordingFormat } = await import('/Recorder.js')
     // An unset assetBase (Vue passes null for an unset String prop) means the default
@@ -246,7 +246,8 @@ try {
     // does that. The take must still end within a few seconds with no clip, every track released
     // and the reason given once. A take stopped by an error was already explained with a promise
     // of review, so the reason replaces that explanation. A take disposed of meanwhile is
-    // rejected as cancelled and explains nothing.
+    // rejected as cancelled and explains nothing. An onError that throws still gets the take
+    // given up and its tracks released, and its exception still reaches the page.
     const unfinished = 'Recording could not be finished. Please record again.'
     const silenced = new WeakSet()
     const recorderApi = Object.fromEntries(['stop', 'ondataavailable', 'onstop', 'onerror'].map(name => [name, Object.getOwnPropertyDescriptor(MediaRecorder.prototype, name)]))
@@ -255,11 +256,15 @@ try {
       const { get, set } = recorderApi[name]
       Object.defineProperty(MediaRecorder.prototype, name, { configurable: true, get, set (listener) { set.call(this, listener && (event => { if (!silenced.has(this)) listener(event) })) } })
     }
+    const hostFailure = 'Injected onError failure'
+    let rethrown = 0
+    const countRethrown = event => { if (event.error && event.error.message === hostFailure) { rethrown++; event.preventDefault() } }
+    window.addEventListener('error', countRethrown)
     try {
-      for (const [name, end, expected, explanations] of [['Stop', take => take.stop(), unfinished, [unfinished]], ['track end', loseMicrophone, disconnected, [disconnected]], ['a hidden page', hidePage, unfinished, [backgrounded, unfinished]], ['disposal', take => take.dispose(), 'AbortError', []]]) {
+      for (const [name, end, expected, explanations, throws] of [['Stop', take => take.stop(), unfinished, [unfinished]], ['Stop, with an onError that throws', take => take.stop(), unfinished, [unfinished], true], ['track end', loseMicrophone, disconnected, [disconnected]], ['a hidden page', hidePage, unfinished, [backgrounded, unfinished]], ['disposal', take => take.dispose(), 'AbortError', []]]) {
         const seen = []
         const explained = []
-        recorder = new Recorder(canvas, state => seen.push(state), error => explained.push(error.message), { assetBase })
+        recorder = new Recorder(canvas, state => seen.push(state), error => { explained.push(error.message); if (throws) throw Error(hostFailure) }, { assetBase })
         await recorder.prepare({ background: 'none' })
         const tracks = recorder.stream.getTracks()
         const take = recorder.start()
@@ -276,31 +281,38 @@ try {
         recorder.dispose()
         console.log(`PASS a take that never finishes, ended by ${name}, is given up after ${Math.round(waited)} ms`)
       }
-    } finally { for (const [name, descriptor] of Object.entries(recorderApi)) Object.defineProperty(MediaRecorder.prototype, name, descriptor) }
-    let audioBytes = null
-    if (!skipAudioOnly) {
-      recorder = new Recorder(canvas, state => states.push(state), error => errors.push(error.message), { assetBase })
-      await recorder.prepare({ audioOnly: true })
-      const audioDone = recorder.start(); await new Promise(resolve => setTimeout(resolve, 1100)); recorder.stop()
-      const audio = await audioDone
-      if (!audio.mimeType.startsWith('audio/')) throw Error('Audio mislabeled')
-      audioBytes = audio.blob.size
-      // An audio-only take records only the microphone, so MediaRecorder stops by itself
-      // when it ends, which may come before the track's ended event. The clip is still kept.
-      recorder.dispose()
-      const explained = []
-      recorder = new Recorder(canvas, state => states.push(state), error => explained.push(error.message), { assetBase })
-      await recorder.prepare({ audioOnly: true })
-      const cut = recorder.start(); await new Promise(resolve => setTimeout(resolve, 1200))
-      recorder.stream.getAudioTracks()[0].stop()
-      const partial = await cut
-      if (!partial.blob.size || recorder.state !== 'review' || JSON.stringify(explained) !== JSON.stringify([stopped])) throw Error(`A microphone that ends an audio-only take must keep it for review (${explained})`)
-      console.log('PASS microphone end stops an audio-only take for review')
+    } finally {
+      for (const [name, descriptor] of Object.entries(recorderApi)) Object.defineProperty(MediaRecorder.prototype, name, descriptor)
+      window.removeEventListener('error', countRethrown)
     }
+    if (rethrown !== 1) throw Error(`The exception thrown by onError must reach the page once, not ${rethrown} times`)
+    // An audio-only take records only the microphone, in WebKit too.
+    recorder = new Recorder(canvas, state => states.push(state), error => errors.push(error.message), { assetBase })
+    await recorder.prepare({ audioOnly: true })
+    const audioDone = recorder.start(); await new Promise(resolve => setTimeout(resolve, 1100)); recorder.stop()
+    const audio = await audioDone
+    if (!audio.mimeType.startsWith('audio/')) throw Error('Audio mislabeled')
+    const listener = document.createElement('audio')
+    listener.src = URL.createObjectURL(audio.blob)
+    await new Promise((resolve, reject) => { listener.onloadedmetadata = resolve; listener.onerror = () => reject(Error('Recorded audio cannot play')); setTimeout(() => reject(Error('Recorded audio timed out loading')), 10000) })
+    URL.revokeObjectURL(listener.src)
+    const audioBytes = audio.blob.size
+    console.log('PASS audio-only take')
+    // MediaRecorder stops by itself when the microphone ends, which may come before the
+    // track's ended event. The clip is still kept.
+    recorder.dispose()
+    const explained = []
+    recorder = new Recorder(canvas, state => states.push(state), error => explained.push(error.message), { assetBase })
+    await recorder.prepare({ audioOnly: true })
+    const cut = recorder.start(); await new Promise(resolve => setTimeout(resolve, 1200))
+    recorder.stream.getAudioTracks()[0].stop()
+    const partial = await cut
+    if (!partial.blob.size || recorder.state !== 'review' || JSON.stringify(explained) !== JSON.stringify([stopped])) throw Error(`A microphone that ends an audio-only take must keep it for review (${explained})`)
+    console.log('PASS microphone end stops an audio-only take for review')
     recorder.dispose(); recorder.dispose()
     if (recorder.state !== 'disposed' || recorder.stream) throw Error('Resource leak')
-    return { states, errors, tests, format: recordingFormat(), audioBytes, skipAudioOnly }
-  }, { backgrounds, skipAudioOnly: process.env.BROWSER === 'webkit', assetBase, synthetic: process.env.BROWSER === 'webkit', expectWorker })
+    return { states, errors, tests, format: recordingFormat(), audioFormat: audio.mimeType, audioBytes }
+  }, { backgrounds, assetBase, synthetic: process.env.BROWSER === 'webkit', expectWorker })
   assert.deepEqual(errors, [])
   assert.deepEqual(offsite, [], 'The recorder requested something from another origin')
   assert.deepEqual(uploads, [], 'The recorder sent something to the page\'s origin')
