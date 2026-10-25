@@ -265,6 +265,41 @@ try {
     if (rethrown - beforePreview !== 1) throw Error(`A track that ends during the preview: the exception thrown by onError must reach the page once, not ${rethrown - beforePreview} times`)
     recorder.dispose()
     console.log('PASS a track that ends during the preview, with an onError that throws, releases the camera')
+    // MediaRecorder can report an error during a take, such as an encoder failure. What it
+    // recorded may be cut short or unplayable, so nothing is kept for review: the take is
+    // rejected, the failure is explained once, every track is released and the student
+    // prepares again, as after a take that never finishes. An error while the take is
+    // finishing ends it the same way; one after disposal only cancels it. An onError that
+    // throws still gets the take ended, and its exception still reaches the page.
+    const failed = 'Recording failed. Please retake the clip.'
+    const breakRecorder = take => take.recorder.dispatchEvent(new Event('error'))
+    for (const [name, end, expected, explanations, throws] of [['during a take', breakRecorder, failed, ['Recording failed.']], ['during a take, with an onError that throws', breakRecorder, failed, ['Recording failed.'], true], ['while the take is finishing', take => { take.stop(); breakRecorder(take) }, failed, ['Recording failed.']], ['after disposal', take => { take.dispose(); breakRecorder(take) }, 'AbortError', []]]) {
+      const seen = []
+      const explained = []
+      recorder = new Recorder(canvas, state => seen.push(state), error => { explained.push(error.message); if (throws) throw Error(hostFailure) }, { assetBase })
+      await recorder.prepare({ background: 'none' })
+      const tracks = recorder.stream.getTracks()
+      const take = recorder.start()
+      // Long enough for a chunk of data to arrive, so there is something that could be kept.
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      const before = rethrown
+      end(recorder)
+      const outcome = await Promise.race([take.then(() => 'a clip', error => error.name === 'AbortError' ? error.name : error.message), new Promise(resolve => setTimeout(() => resolve('no outcome after 6 s'), 6000))])
+      if (outcome !== expected) throw Error(`A MediaRecorder error ${name}: expected ${expected}, got ${outcome} (${seen})`)
+      if (JSON.stringify(explained) !== JSON.stringify(explanations)) throw Error(`A MediaRecorder error ${name}: onError must explain ${JSON.stringify(explanations)}, not ${JSON.stringify(explained)}`)
+      if (recorder.state !== (expected === 'AbortError' ? 'disposed' : 'idle') || seen.includes('review')) throw Error(`A MediaRecorder error ${name}: must end the take with nothing for review, but the state is ${recorder.state} (${seen})`)
+      if (recorder.stream || recorder.output || tracks.some(track => track.readyState !== 'ended')) throw Error(`A MediaRecorder error ${name}: must release the camera and microphone`)
+      await new Promise(resolve => setTimeout(resolve))
+      if (rethrown - before !== (throws ? 1 : 0)) throw Error(`A MediaRecorder error ${name}: the exception thrown by onError must reach the page ${throws ? 'once' : 'never'}, not ${rethrown - before} times`)
+      if (expected !== 'AbortError') {
+        await recorder.prepare({ background: 'none' })
+        // The failed take's MediaRecorder may still report data or a stop; none of it may revive the take.
+        await new Promise(resolve => setTimeout(resolve, 300))
+        if (recorder.state !== 'preview' || seen.includes('review')) throw Error(`A MediaRecorder error ${name}: the student must be able to prepare again (${seen})`)
+      }
+      recorder.dispose()
+      console.log(`PASS a MediaRecorder error ${name} keeps nothing for review`)
+    }
     // In WebKit, a take stopped moments after it starts can leave MediaRecorder silent: it goes
     // inactive, but neither stop nor error ever fires. Here every recorder that is told to stop
     // does that. The take must still end within a few seconds with no clip, every track released

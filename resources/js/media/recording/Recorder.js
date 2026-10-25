@@ -212,10 +212,14 @@ export default class Recorder {
           if (data.size) { this.chunks.push(data); this.bytes += data.size }
           if (this.bytes >= 75000000 && this.state === 'recording') this.stop()
         }
+        // After a MediaRecorder error, such as an encoder failure, what was recorded may be cut
+        // short or unplayable. Like a take given up above, it ends at once with nothing kept,
+        // during the take or while it finishes.
         recorder.onerror = () => {
           // A take ended by dispose() was abandoned, whatever its MediaRecorder reports afterwards.
-          reject(this.state === 'disposed' ? new DOMException('The recording was cancelled.', 'AbortError') : new Error('Recording failed. Please retake the clip.'))
-          this.fail(new Error('Recording failed.'))
+          const cancelled = this.state === 'disposed'
+          reject(cancelled ? new DOMException('The recording was cancelled.', 'AbortError') : new Error('Recording failed. Please retake the clip.'))
+          try { if (!cancelled) this.onError(new Error('Recording failed.')) } finally { finish('idle') }
         }
         recorder.onstop = () => {
           // MediaRecorder also stops by itself once every recorded track has ended (an audio-only take).
