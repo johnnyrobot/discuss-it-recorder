@@ -204,6 +204,14 @@ try {
       console.log('PASS a preview frame request that fails during the take stops it')
     }
     recorder.dispose()
+    // A host's onError that throws must not keep a take recording or the camera on: the take
+    // ends as it would have, and the exception still reaches the page, once.
+    // WebKit reports an exception thrown from an event handler or timer only after running the
+    // promise reactions it queued, so each count is read a task later.
+    const hostFailure = 'Injected onError failure'
+    let rethrown = 0
+    const countRethrown = event => { if (event.error && event.error.message === hostFailure) { rethrown++; event.preventDefault() } }
+    window.addEventListener('error', countRethrown)
     // A camera or microphone that stops during a take (a dropped Bluetooth microphone, say)
     // keeps the clip so far for review and says so plainly. With nothing recorded there is
     // nothing to review, so the student prepares again. A hidden page keeps its own message.
@@ -216,31 +224,47 @@ try {
       document.dispatchEvent(new Event('visibilitychange'))
       delete document.hidden
     }
-    for (const [name, interrupt, expected] of [['track end with data', loseMicrophone, stopped], ['track end with no data', loseMicrophone, disconnected], ['visibility interruption', hidePage, backgrounded]]) {
+    for (const [name, interrupt, expected, throws] of [['track end with data', loseMicrophone, stopped], ['track end with data, with an onError that throws', loseMicrophone, stopped, true], ['track end with no data', loseMicrophone, disconnected], ['visibility interruption', hidePage, backgrounded], ['visibility interruption, with an onError that throws', hidePage, backgrounded, true]]) {
       const seen = []
       const explained = []
-      recorder = new Recorder(canvas, state => seen.push(state), error => explained.push(error.message), { assetBase })
+      recorder = new Recorder(canvas, state => seen.push(state), error => { explained.push(error.message); if (throws) throw Error(hostFailure) }, { assetBase })
       await recorder.prepare({ background: 'none' })
+      const tracks = recorder.stream.getTracks()
       const take = recorder.start()
       // A take with nothing recorded ends at once, with its chunks dropped. In WebKit, a take
       // stopped this soon sometimes never finishes, so this also covers a lost device given up
       // by the finish timeout. The other takes record for a moment first.
       if (name === 'track end with no data') recorder.recorder.ondataavailable = () => {}
       else await new Promise(resolve => setTimeout(resolve, 1200))
+      const before = rethrown
       const interrupted = performance.now()
       interrupt(recorder)
       let clip = null
       let rejected = null
-      try { clip = await take } catch (error) { rejected = error.message }
+      try { clip = await Promise.race([take, new Promise((resolve, reject) => setTimeout(() => reject(Error('no outcome after 6 s')), 6000))]) } catch (error) { rejected = error.message }
       const settled = Math.round(performance.now() - interrupted)
       if (JSON.stringify(explained) !== JSON.stringify([expected])) throw Error(`${name}: onError must explain once (${explained})`)
       if (expected === disconnected) {
         if (rejected !== disconnected || recorder.state !== 'idle' || seen.includes('review')) throw Error(`${name}: must reject without review (${rejected}; ${seen})`)
       } else if (!clip || !clip.blob.size || recorder.state !== 'review') throw Error(`${name}: must keep the clip for review (${rejected}; ${seen})`)
-      if (recorder.stream) throw Error(`${name}: must release the camera and microphone`)
+      if (recorder.stream || recorder.output || tracks.some(track => track.readyState !== 'ended')) throw Error(`${name}: must release the camera and microphone`)
+      await new Promise(resolve => setTimeout(resolve))
+      if (rethrown - before !== (throws ? 1 : 0)) throw Error(`${name}: the exception thrown by onError must reach the page ${throws ? 'once' : 'never'}, not ${rethrown - before} times`)
       recorder.dispose()
       console.log(`PASS ${name}, settled after ${settled} ms`)
     }
+    // Outside a take, a track that ends returns to idle with the camera off, even when onError throws.
+    const previewSeen = []
+    recorder = new Recorder(canvas, state => previewSeen.push(state), () => { throw Error(hostFailure) }, { assetBase })
+    await recorder.prepare({ background: 'none' })
+    const previewTracks = recorder.stream.getTracks()
+    const beforePreview = rethrown
+    loseMicrophone(recorder)
+    if (recorder.state !== 'idle' || recorder.stream || previewTracks.some(track => track.readyState !== 'ended')) throw Error(`A track that ends during the preview, with an onError that throws: must release the camera and return to idle (${previewSeen})`)
+    await new Promise(resolve => setTimeout(resolve))
+    if (rethrown - beforePreview !== 1) throw Error(`A track that ends during the preview: the exception thrown by onError must reach the page once, not ${rethrown - beforePreview} times`)
+    recorder.dispose()
+    console.log('PASS a track that ends during the preview, with an onError that throws, releases the camera')
     // In WebKit, a take stopped moments after it starts can leave MediaRecorder silent: it goes
     // inactive, but neither stop nor error ever fires. Here every recorder that is told to stop
     // does that. The take must still end within a few seconds with no clip, every track released
@@ -256,10 +280,6 @@ try {
       const { get, set } = recorderApi[name]
       Object.defineProperty(MediaRecorder.prototype, name, { configurable: true, get, set (listener) { set.call(this, listener && (event => { if (!silenced.has(this)) listener(event) })) } })
     }
-    const hostFailure = 'Injected onError failure'
-    let rethrown = 0
-    const countRethrown = event => { if (event.error && event.error.message === hostFailure) { rethrown++; event.preventDefault() } }
-    window.addEventListener('error', countRethrown)
     try {
       for (const [name, end, expected, explanations, throws] of [['Stop', take => take.stop(), unfinished, [unfinished]], ['Stop, with an onError that throws', take => take.stop(), unfinished, [unfinished], true], ['track end', loseMicrophone, disconnected, [disconnected]], ['a hidden page', hidePage, unfinished, [backgrounded, unfinished]], ['disposal', take => take.dispose(), 'AbortError', []]]) {
         const seen = []
@@ -269,6 +289,7 @@ try {
         const tracks = recorder.stream.getTracks()
         const take = recorder.start()
         await new Promise(resolve => setTimeout(resolve, 600))
+        const before = rethrown
         const ended = performance.now()
         end(recorder)
         const outcome = await Promise.race([take.then(() => 'a clip', error => error.name === 'AbortError' ? error.name : error.message), new Promise(resolve => setTimeout(() => resolve('still finishing after 6 s'), 6000))])
@@ -278,6 +299,8 @@ try {
         if (JSON.stringify(explained) !== JSON.stringify(explanations)) throw Error(`A take that never finishes, ended by ${name}: onError must explain ${JSON.stringify(explanations)}, not ${JSON.stringify(explained)}`)
         if (recorder.state !== (expected === 'AbortError' ? 'disposed' : 'idle') || seen.includes('review')) throw Error(`A take that never finishes, ended by ${name}: wrong state (${seen})`)
         if (recorder.stream || recorder.output || tracks.some(track => track.readyState !== 'ended')) throw Error(`A take that never finishes, ended by ${name}: must release the camera and microphone`)
+        await new Promise(resolve => setTimeout(resolve))
+        if (rethrown - before !== (throws ? 1 : 0)) throw Error(`A take that never finishes, ended by ${name}: the exception thrown by onError must reach the page ${throws ? 'once' : 'never'}, not ${rethrown - before} times`)
         recorder.dispose()
         console.log(`PASS a take that never finishes, ended by ${name}, is given up after ${Math.round(waited)} ms`)
       }
@@ -285,7 +308,6 @@ try {
       for (const [name, descriptor] of Object.entries(recorderApi)) Object.defineProperty(MediaRecorder.prototype, name, descriptor)
       window.removeEventListener('error', countRethrown)
     }
-    if (rethrown !== 1) throw Error(`The exception thrown by onError must reach the page once, not ${rethrown} times`)
     // An audio-only take records only the microphone, in WebKit too.
     recorder = new Recorder(canvas, state => states.push(state), error => errors.push(error.message), { assetBase })
     await recorder.prepare({ audioOnly: true })

@@ -221,6 +221,7 @@ export default class Recorder {
           // MediaRecorder also stops by itself once every recorded track has ended (an audio-only take).
           const lost = this.deviceLost || this.state === 'recording'
           let next = 'review'
+          let explanation = null
           try {
             // A take ended by dispose() was abandoned, even though its data arrived.
             if (this.state === 'disposed') throw new DOMException('The recording was cancelled.', 'AbortError')
@@ -230,11 +231,13 @@ export default class Recorder {
             if (!blob.size) throw new Error('The recording was empty. Please try again.')
             resolve({ blob, mimeType: type, extension: extensionFor(type), durationMs: performance.now() - this.started })
             // A lost device keeps the partial take: the student reviews it and can still record again.
-            if (lost) this.onError(new Error('Your camera or microphone stopped. Review what was recorded, or record again.'))
+            if (lost) explanation = new Error('Your camera or microphone stopped. Review what was recorded, or record again.')
           } catch (error) {
             reject(error)
-            if (next === 'idle') this.onError(error)
-          } finally { finish(next) }
+            if (next === 'idle') explanation = error
+          }
+          // Outside the try, so the catch above cannot mistake an exception from onError for the take's own failure and hide it.
+          try { if (explanation) this.onError(explanation) } finally { finish(next) }
         }
       })
       // A consumer may await stop later; avoid an unhandled rejection in the meantime.
@@ -275,13 +278,15 @@ export default class Recorder {
     // Once a take is ending, its promise reports what matters. A late effect error from a
     // frame drawn before MediaRecorder stops must not replace the explanation already given.
     if (this.state === 'finalizing' || this.state === 'disposed') return
-    this.onError(error)
-    if (this.state === 'recording') this.stop()
-    else {
-      ++this.generation
-      this.releaseEffects()
-      if (this.stream && this.stream.getTracks().every(track => track.readyState === 'live')) this.setState('setup-error')
-      else { this.release(); this.setState('idle') }
+    // An onError that throws must not leave a take recording or the camera on; its exception still reaches the page.
+    try { this.onError(error) } finally {
+      if (this.state === 'recording') this.stop()
+      else {
+        ++this.generation
+        this.releaseEffects()
+        if (this.stream && this.stream.getTracks().every(track => track.readyState === 'live')) this.setState('setup-error')
+        else { this.release(); this.setState('idle') }
+      }
     }
   }
 
