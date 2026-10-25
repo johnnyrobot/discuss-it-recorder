@@ -265,6 +265,32 @@ try {
     if (rethrown - beforePreview !== 1) throw Error(`A track that ends during the preview: the exception thrown by onError must reach the page once, not ${rethrown - beforePreview} times`)
     recorder.dispose()
     console.log('PASS a track that ends during the preview, with an onError that throws, releases the camera')
+    // A background-processing failure during a take, with an onError that throws, still stops
+    // the take for review. The failure is injected into the processor's mask, so it runs with
+    // or without a worker. It surfaces in the frame timer's promise chain, so the exception
+    // reaches the page once as an unhandled rejection, not an error event.
+    let unhandled = 0
+    const countUnhandled = event => { if (event.reason && event.reason.message === hostFailure) { unhandled++; event.preventDefault() } }
+    window.addEventListener('unhandledrejection', countUnhandled)
+    try {
+      const processingSeen = []
+      const processingExplained = []
+      recorder = new Recorder(canvas, state => processingSeen.push(state), error => { processingExplained.push(error.message); throw Error(hostFailure) }, { assetBase })
+      await recorder.prepare({ background: 'blur' })
+      const processingTracks = recorder.stream.getTracks()
+      const take = recorder.start()
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      const before = rethrown
+      recorder.processor.mask = () => Promise.reject(new Error('Injected processing failure'))
+      const outcome = await Promise.race([take.then(clip => clip, error => error.message), new Promise(resolve => setTimeout(() => resolve('no outcome after 6 s'), 6000))])
+      if (!outcome.blob || !outcome.blob.size || recorder.state !== 'review') throw Error(`A processing failure during a take, with an onError that throws: must keep the clip for review, but got ${outcome.blob ? 'an empty clip' : outcome} in state ${recorder.state} (${processingSeen})`)
+      if (JSON.stringify(processingExplained) !== JSON.stringify(['Injected processing failure'])) throw Error(`A processing failure during a take, with an onError that throws: onError must explain once, not ${JSON.stringify(processingExplained)}`)
+      if (recorder.stream || recorder.output || processingTracks.some(track => track.readyState !== 'ended')) throw Error('A processing failure during a take, with an onError that throws: must release the camera and microphone')
+      await new Promise(resolve => setTimeout(resolve))
+      if (unhandled !== 1 || rethrown !== before) throw Error(`A processing failure during a take: the exception thrown by onError must reach the page once, as an unhandled rejection (unhandled rejections: ${unhandled}, error events: ${rethrown - before})`)
+      recorder.dispose()
+      console.log('PASS a processing failure during a take, with an onError that throws, keeps the clip for review')
+    } finally { window.removeEventListener('unhandledrejection', countUnhandled) }
     // MediaRecorder can report an error during a take, such as an encoder failure. What it
     // recorded may be cut short or unplayable, so nothing is kept for review: the take is
     // rejected, the failure is explained once, every track is released and the student
