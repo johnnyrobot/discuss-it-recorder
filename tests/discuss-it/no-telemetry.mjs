@@ -13,6 +13,15 @@ assert.equal(JSON.parse(read('package-lock.json')).packages['node_modules/@media
 const assets = 'public/assets/discuss-it'
 assert.ok(fs.existsSync(path.join(root, assets, 'manifest.json')), 'No staged assets: run npm run build first')
 assert.equal(JSON.parse(read(`${assets}/manifest.json`)).version, pin, 'The staged MediaPipe assets are not the pinned release: run npm run build')
+const installed = 'node_modules/@mediapipe/tasks-vision'
+assert.equal(JSON.parse(read(`${installed}/package.json`)).version, pin, 'The installed @mediapipe/tasks-vision is not the pinned release: run npm ci')
+// The manifest only repeats the installed version, so compare the staged files themselves.
+const copies = { 'vision_bundle.js': 'vision_bundle.cjs', 'vision_module.js': 'vision_bundle.mjs' }
+for (const name of fs.readdirSync(path.join(root, assets, 'wasm'))) copies[`wasm/${name}`] = `wasm/${name}`
+for (const [copy, original] of Object.entries(copies)) {
+  const source = path.join(root, installed, original)
+  assert.ok(fs.existsSync(source) && fs.readFileSync(path.join(root, assets, copy)).equals(fs.readFileSync(source)), `${assets}/${copy} is not the pinned release's ${original}: run npm run build`)
+}
 const endpoints = [
   /x-goog-api-key/i, // the header MediaPipe 1.x sends its logging key in
   /google-analytics\.com|googletagmanager\.com|doubleclick\.net/i,
