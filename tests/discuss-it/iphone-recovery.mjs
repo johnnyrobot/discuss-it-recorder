@@ -186,4 +186,35 @@ try {
   await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).click()
   await page.getByRole('button', { name: 'Start recording', exact: true }).waitFor({ timeout: 60000 })
   console.log('PASS an error without a message is explained and the default camera works on retry')
+  // A microphone that stops during a take keeps the clip for review and says so. With
+  // nothing recorded there is nothing to review: the student prepares again.
+  const loseMicrophone = () => page.evaluate(() => { const track = window.cameraStream.getAudioTracks()[0]; track.stop(); track.dispatchEvent(new Event('ended')) })
+  await page.getByRole('button', { name: 'Start recording', exact: true }).click()
+  await page.waitForTimeout(1200)
+  await loseMicrophone()
+  await page.getByRole('link', { name: 'Download a copy', exact: true }).waitFor()
+  assert.equal(await page.getByRole('alert').innerText(), 'Your camera or microphone stopped. Review what was recorded, or record again.')
+  assert.equal(await page.getByRole('button', { name: 'Retake', exact: true }).count(), 1, 'The partial take can be recorded again')
+  const recorded = await page.evaluate(() => window.recordedEvents.slice())
+  assert.equal(recorded.at(-1), 'take', 'The partial take is offered to the host')
+  console.log('PASS a microphone that stops during a take keeps the clip for review')
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: 'Retake', exact: true }).click()
+  await page.getByRole('button', { name: 'Start recording', exact: true }).waitFor({ timeout: 60000 })
+  // Drop every recorded chunk, as if the microphone stopped before the first one arrived.
+  // Still wait before ending it: in Playwright's WebKit, a take stopped within moments of
+  // starting sometimes never finishes.
+  await page.evaluate(() => {
+    const handler = Object.getOwnPropertyDescriptor(MediaRecorder.prototype, 'ondataavailable')
+    Object.defineProperty(MediaRecorder.prototype, 'ondataavailable', { configurable: true, get: handler.get, set (listener) { handler.set.call(this, listener && (() => {})) } })
+  })
+  await page.getByRole('button', { name: 'Start recording', exact: true }).click()
+  await page.waitForTimeout(1200)
+  await loseMicrophone()
+  await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).waitFor()
+  assert.equal(await page.getByRole('alert').innerText(), 'Camera or microphone disconnected. Please prepare a new recording.')
+  assert.equal(await page.getByLabel('Review recording', { exact: true }).count(), 0, 'An empty take is not shown for review')
+  assert.deepEqual(await page.evaluate(() => window.recordedEvents), [...recorded, null], 'An empty take is never emitted')
+  assert.deepEqual((await page.evaluate(() => window.recordingEvents)).slice(-2), [true, false], 'An empty take still ends `recording`')
+  console.log('PASS a microphone that stops before anything is recorded asks to prepare again')
 } finally { await browser.close(); server.close() }
