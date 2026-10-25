@@ -45,7 +45,7 @@ LT's ADAPT (`master`) already has Discuss-It; the steps below add the recorder t
 
 LT's Discuss-It records video and audio comments with `resources/js/components/NativeAudioVideoRecorder.vue` (last changed in `e33e6d3a9`, 2025-11-20). The same component records `submission` and `submitted-work` uploads, so one change covers all three.
 
-1. Copy `resources/js/media/recording/`, `resources/js/components/recording/`, `resources/vendor/discuss-it/` and `scripts/build-discuss-it-assets.cjs`, add `@mediapipe/tasks-vision@0.10.32`, and serve the runtime assets as described above.
+1. Copy `resources/js/media/recording/`, `resources/js/components/recording/`, `resources/vendor/discuss-it/` and `scripts/build-discuss-it-assets.cjs`, add `@mediapipe/tasks-vision@0.10.35`, and serve the runtime assets as described above.
 2. In `NativeAudioVideoRecorder.vue`, replace the `getUserMedia`/`MediaRecorder` code in `startRecording()` and `stopRecording()` with `VideoRecorder.vue` (pass `audio-only` when `recordingType` is `audio`), or call `Recorder.js` directly.
 3. Keep emitting `startVideoRecording` and `stopVideoRecording` when recording actually starts and stops: `DiscussItViewer.vue` uses them for the minimum-length countdown. Emit them from `VideoRecorder.vue`'s `recording` event (`true` when a take starts, `false` when it ends), not from `busy`, which is also true during the preview. If you call `Recorder.js` directly, use its `recording` state.
 4. On `recorded`, keep the result until the student submits, then pass `result.blob` to the existing `uploadRecording()`. LT's pre-signed upload, storage, threads and permissions stay as they are.

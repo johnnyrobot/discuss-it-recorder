@@ -11,7 +11,8 @@ fs.copyFileSync(path.join(root, 'resources/vendor/discuss-it/selfie_segmenter.tf
 fs.copyFileSync(path.join(root, 'resources/js/media/recording/segmenter-worker.js'), path.join(target, 'segmenter-worker.js'))
 fs.copyFileSync(path.join(root, 'node_modules/@mediapipe/tasks-vision/vision_bundle.cjs'), path.join(target, 'vision_bundle.js'))
 fs.copyFileSync(path.join(root, 'node_modules/@mediapipe/tasks-vision/vision_bundle.mjs'), path.join(target, 'vision_module.js'))
-fs.cpSync(path.join(root, 'node_modules/@mediapipe/tasks-vision/wasm'), path.join(target, 'wasm'), { recursive: true })
+// The *_module_internal files are only for FilesetResolver.forVisionTasks(base, true), which the recorder never uses.
+fs.cpSync(path.join(root, 'node_modules/@mediapipe/tasks-vision/wasm'), path.join(target, 'wasm'), { recursive: true, filter: source => !path.basename(source).includes('_module_internal') })
 const files = []
 function walk (directory) {
   for (const name of fs.readdirSync(directory)) {
@@ -21,4 +22,5 @@ function walk (directory) {
   }
 }
 walk(target)
-fs.writeFileSync(path.join(target, 'manifest.json'), JSON.stringify({ package: '@mediapipe/tasks-vision', version: '0.10.32', license: 'Apache-2.0', files }, null, 2))
+const { version } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@mediapipe/tasks-vision/package.json'), 'utf8'))
+fs.writeFileSync(path.join(target, 'manifest.json'), JSON.stringify({ package: '@mediapipe/tasks-vision', version, license: 'Apache-2.0', files }, null, 2))
