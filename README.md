@@ -1,6 +1,6 @@
 # Discuss-It recorder
 
-Focused developer handoff for LibreTexts: **not an ADAPT fork and not a complete LMS**. This repo contains the reusable on-device recorder, a Vue 2 adapter, a no-login/no-upload demo, tests, and an optional ADAPT integration patch. No ADAPT history, credentials, user data, recordings, or infrastructure configuration is included.
+Focused developer handoff for LibreTexts: **not an ADAPT fork and not a complete LMS**. This repo contains the reusable on-device recorder, a Vue 2 adapter, a no-login/no-upload demo, tests, and an archived ADAPT integration patch kept for reference. No ADAPT history, credentials, user data, recordings, or infrastructure configuration is included.
 
 ## Try it without ADAPT
 
@@ -19,7 +19,7 @@ Open `http://127.0.0.1:4173`. Allow camera/microphone, choose a look, record, re
 - `resources/js/media/recording/`: framework-independent browser ES modules. Capture, effect processing and encoding stay on-device.
 - `resources/js/components/recording/VideoRecorder.vue`: optional legacy Vue 2 UI. It emits `busy`, `recording` and `recorded`; it does not know about users, courses or uploads. Vue 2 is used only by this adapter/demo; a Vue 3 or other UI can call the same core.
 - `resources/vendor/discuss-it/`: pinned segmentation model, license and checksum. `npm run build` copies the installed MediaPipe runtime/WASM into `public/assets/discuss-it/`.
-- `integrations/adapt/`: optional discussion/question-type integration reference, separate from the recorder.
+- `integrations/adapt/`: ADAPT integration notes and an archived discussion/question-type patch, separate from the recorder.
 
 Front/rear switching, device selection, mirroring, blur, neutral color and custom-photo backgrounds are supported before each take. Effects are encoded into the saved recording. HEIC/HEIF needs native browser codec support; otherwise use JPG/PNG/WebP. Photos are limited to 20 MB/50 megapixels and normalized to at most 640 pixels per side. Video is approximately 15 fps, with five-minute and 75 MB local stop thresholds. Audio-only is supported.
 
@@ -41,7 +41,7 @@ recorder.dispose() // Also call on navigation/unmount.
 
 ## Add it to LibreTexts ADAPT
 
-LT's ADAPT (`master`) already has Discuss-It; the steps below add the recorder to it. `integrations/adapt/feature.patch` also adds a simpler Discuss-It backend, viewer and question type, built against an older ADAPT baseline. Apply it on an integration branch as [ADAPT integration](integrations/adapt/README.md) describes, and reconcile it with LT's existing Discuss-It files.
+LT's ADAPT (`master`) already has Discuss-It; the steps below add the recorder to it, and that is the supported path. `integrations/adapt/feature.patch` is archived: it adds a separate Discuss-It backend, viewer and question type built against a non-public ADAPT baseline from before Laravel 12, and it does not apply to `master`. See [ADAPT integration](integrations/adapt/README.md).
 
 LT's Discuss-It records video and audio comments with `resources/js/components/NativeAudioVideoRecorder.vue` (last changed in `e33e6d3a9`, 2025-11-20). The same component records `submission` and `submitted-work` uploads, so one change covers all three.
 

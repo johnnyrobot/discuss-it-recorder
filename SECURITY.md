@@ -4,6 +4,6 @@ Use GitHub's private vulnerability reporting for security issues. Please do not 
 
 The standalone recorder has no analytics, telemetry, authentication, upload endpoint, or persistent storage. Camera frames, microphone audio, segmentation masks, and selected background photos stay in the browser. A completed recording exists as an in-memory Blob until the host application explicitly uploads it or the user downloads it.
 
-An integrating application is responsible for authentication, authorization, consent, server-side media validation, private storage, retention, captions, access-controlled playback, and appropriate security headers. Treat all browser-produced media and metadata as untrusted input. The included ADAPT patch is reference implementation material that must be reviewed and reconciled with the target deployment.
+An integrating application is responsible for authentication, authorization, consent, server-side media validation, private storage, retention, captions, access-controlled playback, and appropriate security headers. Treat all browser-produced media and metadata as untrusted input. The archived ADAPT patch is unmaintained reference material for an older, non-public ADAPT baseline; do not deploy it.
 
-Supported security fixes are applied to the latest release and `main`. This project intentionally retains a legacy Vue 2 demo adapter; production consumers should use a maintained UI framework around the framework-independent recorder core.
+Security fixes land on `main` and ship in the next tagged release (see the GitHub Releases page); earlier releases are not patched. This project intentionally retains a legacy Vue 2 demo adapter; production consumers should use a maintained UI framework around the framework-independent recorder core.
