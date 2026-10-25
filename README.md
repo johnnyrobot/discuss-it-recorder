@@ -61,7 +61,7 @@ npm run test:demo
 npm run test:all
 ```
 
-`npm run test:all` runs every variant one after another. Each also has its own script: `test:photos:chromium`, `test:webkit`, `test:iphone` (iPhone user agent, main-thread effects), `test:worker-failure`, `test:enumeration-failure`, `test:ui:photo` (a photo over 5 MB as the background) and `test:ui:decoder` (photo loading without `createImageBitmap`). All of them are defined once, in `tests/run.mjs`. `node tests/run.mjs KEY=value file.mjs` runs any test file with environment settings on any shell, and `node tests/run.mjs BACKGROUND=none webkit` adds settings to a named variant. Test settings come only from these arguments; ones exported in your shell are ignored.
+`npm run test:all` runs every variant one after another. Each also has its own script: `test:no-telemetry` (the MediaPipe pin, and no telemetry or analytics endpoint in the shipped files; see [ADR 0001](docs/adr/0001-no-telemetry.md)), `test:photos:chromium`, `test:webkit`, `test:iphone` (iPhone user agent, main-thread effects), `test:worker-failure`, `test:enumeration-failure`, `test:ui:photo` (a photo over 5 MB as the background) and `test:ui:decoder` (photo loading without `createImageBitmap`). All of them are defined once, in `tests/run.mjs`. `node tests/run.mjs KEY=value file.mjs` runs any test file with environment settings on any shell, and `node tests/run.mjs BACKGROUND=none webkit` adds settings to a named variant. Test settings come only from these arguments; ones exported in your shell are ignored.
 
 Tests use synthetic media, not your camera, microphone or ADAPT accounts. On macOS, image tests generate a synthetic HEIC with `sips`; other systems skip that native-codec check. Browser automation is not a real iPhone hardware test.
 

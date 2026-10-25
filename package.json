@@ -13,7 +13,8 @@
   "scripts": {
     "build": "node scripts/build-discuss-it-assets.cjs",
     "demo": "node scripts/demo.mjs",
-    "test": "node tests/run.mjs photos recorder",
+    "test": "node tests/run.mjs no-telemetry photos recorder",
+    "test:no-telemetry": "node tests/run.mjs no-telemetry",
     "test:ui": "node tests/run.mjs ui",
     "test:demo": "node tests/run.mjs demo",
     "test:photos:chromium": "node tests/run.mjs photos:chromium",
