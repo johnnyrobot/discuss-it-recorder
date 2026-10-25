@@ -1,6 +1,6 @@
 {
   "name": "@johnnylibretexts/discuss-it-recorder",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "On-device video recording, camera switching, mirroring and virtual backgrounds, with a Vue 2 adapter and ADAPT integration reference.",
@@ -25,6 +25,6 @@
     "test:ui:decoder": "node tests/run.mjs ui:decoder",
     "test:all": "node tests/run.mjs"
   },
-  "dependencies": { "@mediapipe/tasks-vision": "0.10.32" },
+  "dependencies": { "@mediapipe/tasks-vision": "0.10.35" },
   "devDependencies": { "vue": "2.7.16", "playwright": "1.64.1" }
 }
