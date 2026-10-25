@@ -1,14 +1,20 @@
-# Optional ADAPT integration — reference, not a standalone app
+# ADAPT integration reference
 
-If LT already has Discuss-It, **integrate only the recorder** into the existing response UI/upload pipeline. There is no need to replace the discussion subsystem. Copy the recorder resources, install `@mediapipe/tasks-vision@0.10.32`, stage same-origin assets, and connect the Vue adapter's `recorded` result to the existing explicit Submit action.
+## Recommended: add only the recorder
 
-`feature.patch` is supplied separately for developers who also want the implemented discussion/question-type backend and UI. It contains only feature additions and narrow ADAPT edits against baseline `0345e96cc84c056dab9a6ab4efe1b322b7bcd79d`; **it is not guaranteed to apply to LT's current ADAPT**. Read/reconcile the hunks on a new integration branch. Do not overwrite current application files wholesale. The patched viewer also imports `dompurify` (checked with 3.4.16) to sanitize question prompts.
+LT's ADAPT (`master`) already has Discuss-It, so **integrate only the recorder** into its existing response UI and upload pipeline. There is no need to replace the discussion subsystem. Replace the raw `getUserMedia`/`MediaRecorder` code in `resources/js/components/NativeAudioVideoRecorder.vue` with the Vue adapter or `Recorder.js`, as [the main README](../../README.md#add-it-to-libretexts-adapt) describes step by step: copy the recorder resources, install `@mediapipe/tasks-vision@0.10.32`, stage same-origin assets, and pass the adapter's `recorded` result to the existing upload only after the student submits.
 
-## Integration checklist
+## Archived: `feature.patch`
+
+**`feature.patch` is archived. It is kept for reference only and is not maintained or rebased.** It was built against ADAPT commit `0345e96cc84c056dab9a6ab4efe1b322b7bcd79d`, which is in a non-public fork from before ADAPT moved to Laravel 12; that baseline ran PHP 7.4, Laravel 7.30.4 and Laravel Mix 6. It is not on LibreTexts/adapt, so the patch's apply check can only be reproduced from that fork. It will not apply to LT's current `master` (PHP 8.4 and Laravel 12 since `98f910391`, 2026-10-23, building with `laravel-mix ^4.1.4`): for example, it creates `resources/js/components/viewers/DiscussItViewer.vue`, which `master` already has as its own, much larger component.
+
+The patch adds a separate discussion/question-type backend and UI: feature additions and narrow ADAPT edits. Read it for ideas, such as server-side media checks, private storage and signed playback, and port anything useful by hand. Do not apply it to `master` or overwrite current application files with it. The patched viewer also imports `dompurify` (checked with 3.4.16) to sanitize question prompts. The checklist and notes below describe the patch as it was built and checked against its baseline.
+
+## Archived patch checklist (reference)
 
 1. Keep LT's existing authentication, role, enrollment, section/group and assignment-availability rules. Review the adapter calls into ADAPT's User, Assignment, Submission and grading models.
 2. Copy `resources/js/media/recording/`, `resources/js/components/recording/`, `resources/vendor/discuss-it/`, and the build-assets script into the host; merge the pinned MediaPipe dependency, `dompurify` for the patched viewer, and the asset-build command into its package setup. Do not replace its package manifest/lock wholesale.
-3. In the host checkout, run `git apply --check /path/to/feature.patch`. Resolve differences before applying. The patch excludes copied recorder files, package locks, infrastructure, demo accounts/seeding and unrelated course-drag fixes.
+3. The patch was checked with `git apply --check` against its baseline only; against current `master` it fails (see above), so port hunks by hand. The patch excludes copied recorder files, package locks, infrastructure, demo accounts/seeding and unrelated course-drag fixes.
 4. Review the three feature tables/migration and backup policy. The migration deliberately refuses destructive rollback; retaining submitted media and grades is required. Use a disposable test database first.
 5. Review feature API authentication/throttling, the feature-scoped streaming PUT size allowance, private storage configuration and signed playback authorization/range behavior. Do not expose the storage backend directly.
 6. Provide FFmpeg/ffprobe in the host's existing deployment, verify processor binary paths, and schedule `php artisan discuss-it:process-media` with single-run/concurrency control. This handoff intentionally contains no provider-specific, container, or service-manager configuration.
