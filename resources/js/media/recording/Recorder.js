@@ -14,6 +14,8 @@ export function extensionFor (mimeType) {
   throw new Error('The browser returned an unsupported recording format.')
 }
 
+const disconnected = 'Camera or microphone disconnected. Please prepare a new recording.'
+
 export default class Recorder {
   constructor (canvas, onState = () => {}, onError = () => {}, { assetBase } = {}) {
     this.canvas = canvas
@@ -69,7 +71,7 @@ export default class Recorder {
       })
       if (generation !== this.generation) { stream.getTracks().forEach(track => track.stop()); return }
       this.stream = stream
-      stream.getTracks().forEach(track => { track.onended = () => this.fail(new Error('Camera or microphone disconnected. Please prepare a new recording.')) })
+      stream.getTracks().forEach(track => { track.onended = () => this.trackEnded() })
       if (!this.settings.audioOnly) {
         // Keep microphone audio in the recording stream, not the hidden preview.
         // On retries call play immediately, directly within the user's tap.
@@ -177,6 +179,7 @@ export default class Recorder {
     if (this.processor && this.processor.recovering) throw new Error('The background effect is restarting. Wait for the preview to move again, then record.')
     this.chunks = []
     this.bytes = 0
+    this.deviceLost = false
     const captured = this.settings.audioOnly ? [] : this.canvas.captureStream(15).getVideoTracks()
     const output = this.settings.audioOnly ? this.stream : new MediaStream([...captured, ...this.stream.getAudioTracks()])
     const mimeType = recordingFormat(MediaRecorder, this.settings.audioOnly)
@@ -195,17 +198,26 @@ export default class Recorder {
           this.fail(new Error('Recording failed.'))
         }
         recorder.onstop = () => {
+          // MediaRecorder also stops by itself once every recorded track has ended (an audio-only take).
+          const lost = this.deviceLost || this.state === 'recording'
+          let next = 'review'
           try {
             // A take ended by dispose() was abandoned, even though its data arrived.
             if (this.state === 'disposed') throw new DOMException('The recording was cancelled.', 'AbortError')
             const type = recorder.mimeType || (this.chunks[0] && this.chunks[0].type) || mimeType
             const blob = new Blob(this.chunks, { type })
+            if (!blob.size && lost) { next = 'idle'; throw new Error(disconnected) }
             if (!blob.size) throw new Error('The recording was empty. Please try again.')
             resolve({ blob, mimeType: type, extension: extensionFor(type), durationMs: performance.now() - this.started })
-          } catch (error) { reject(error) } finally {
+            // A lost device keeps the partial take: the student reviews it and can still record again.
+            if (lost) this.onError(new Error('Your camera or microphone stopped. Review what was recorded, or record again.'))
+          } catch (error) {
+            reject(error)
+            if (next === 'idle') this.onError(error)
+          } finally {
             // The handlers hold this take's promise and Blob; drop them so a later prepare() frees it.
             recorder.ondataavailable = recorder.onerror = recorder.onstop = null
-            this.chunks = []; ++this.generation; this.release(); if (this.state !== 'disposed') this.setState('review')
+            this.chunks = []; this.deviceLost = false; ++this.generation; this.release(); if (this.state !== 'disposed') this.setState(next)
           }
         }
       })
@@ -232,6 +244,11 @@ export default class Recorder {
     const none = Promise.reject(new DOMException('No recording has been started.', 'InvalidStateError'))
     none.catch(() => {})
     return none
+  }
+
+  trackEnded () {
+    // During a take, keep what was recorded; onstop explains once it knows whether any data arrived.
+    if (this.state === 'recording') { this.deviceLost = true; this.stop() } else this.fail(new Error(disconnected))
   }
 
   fail (error) {

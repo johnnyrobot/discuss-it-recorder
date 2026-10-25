@@ -1,3 +1,7 @@
+// ARCHIVED: reference only, kept with the archived feature.patch and not maintained.
+// It checks the patched viewer's prompt, API calls and UI, so it fails against current
+// upstream ADAPT, whose own DiscussItViewer.vue is a different component. That failure
+// is expected; this is not a validation step. See integrations/adapt/README.md.
 // Browser checks for the patched DiscussItViewer: prompt sanitizing, expired-upload
 // recovery and stalled-upload handling. Run from the ADAPT checkout root after
 // applying the patch and installing dompurify. Uses the host's own Vue 2, axios (0.21

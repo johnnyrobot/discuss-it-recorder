@@ -191,6 +191,40 @@ try {
       console.log('PASS a preview frame request that fails during the take stops it')
     }
     recorder.dispose()
+    // A camera or microphone that stops during a take (a dropped Bluetooth microphone, say)
+    // keeps the clip so far for review and says so plainly. With nothing recorded there is
+    // nothing to review, so the student prepares again. A hidden page keeps its own message.
+    const stopped = 'Your camera or microphone stopped. Review what was recorded, or record again.'
+    const disconnected = 'Camera or microphone disconnected. Please prepare a new recording.'
+    const backgrounded = 'Recording stopped because the app went into the background. Review your clip before submitting.'
+    const loseMicrophone = take => { const track = take.stream.getAudioTracks()[0]; track.stop(); track.dispatchEvent(new Event('ended')) }
+    const hidePage = () => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+      document.dispatchEvent(new Event('visibilitychange'))
+      delete document.hidden
+    }
+    for (const [name, interrupt, expected] of [['track end with data', loseMicrophone, stopped], ['track end with no data', loseMicrophone, disconnected], ['visibility interruption', hidePage, backgrounded]]) {
+      const seen = []
+      const explained = []
+      recorder = new Recorder(canvas, state => seen.push(state), error => explained.push(error.message), { assetBase })
+      await recorder.prepare({ background: 'none' })
+      const take = recorder.start()
+      // Drop the recorded chunks for a take with nothing recorded. Still wait before ending
+      // it: in Playwright's WebKit, a take stopped within moments of starting sometimes never finishes.
+      if (name === 'track end with no data') recorder.recorder.ondataavailable = () => {}
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      interrupt(recorder)
+      let clip = null
+      let rejected = null
+      try { clip = await take } catch (error) { rejected = error.message }
+      if (JSON.stringify(explained) !== JSON.stringify([expected])) throw Error(`${name}: onError must explain once (${explained})`)
+      if (expected === disconnected) {
+        if (rejected !== disconnected || recorder.state !== 'idle' || seen.includes('review')) throw Error(`${name}: must reject without review (${rejected}; ${seen})`)
+      } else if (!clip || !clip.blob.size || recorder.state !== 'review') throw Error(`${name}: must keep the clip for review (${rejected}; ${seen})`)
+      if (recorder.stream) throw Error(`${name}: must release the camera and microphone`)
+      recorder.dispose()
+      console.log(`PASS ${name}`)
+    }
     let audioBytes = null
     if (!skipAudioOnly) {
       recorder = new Recorder(canvas, state => states.push(state), error => errors.push(error.message), { assetBase })
@@ -199,6 +233,17 @@ try {
       const audio = await audioDone
       if (!audio.mimeType.startsWith('audio/')) throw Error('Audio mislabeled')
       audioBytes = audio.blob.size
+      // An audio-only take records only the microphone, so MediaRecorder stops by itself
+      // when it ends, which may come before the track's ended event. The clip is still kept.
+      recorder.dispose()
+      const explained = []
+      recorder = new Recorder(canvas, state => states.push(state), error => explained.push(error.message), { assetBase })
+      await recorder.prepare({ audioOnly: true })
+      const cut = recorder.start(); await new Promise(resolve => setTimeout(resolve, 1200))
+      recorder.stream.getAudioTracks()[0].stop()
+      const partial = await cut
+      if (!partial.blob.size || recorder.state !== 'review' || JSON.stringify(explained) !== JSON.stringify([stopped])) throw Error(`A microphone that ends an audio-only take must keep it for review (${explained})`)
+      console.log('PASS microphone end stops an audio-only take for review')
     }
     recorder.dispose(); recorder.dispose()
     if (recorder.state !== 'disposed' || recorder.stream) throw Error('Resource leak')
