@@ -8,6 +8,7 @@
 import { spawnSync } from 'node:child_process'
 const settings = ['BROWSER', 'IPHONE', 'FAIL_WORKER', 'FAIL_ENUMERATION', 'IMAGE', 'BACKGROUND']
 const variants = {
+  'no-telemetry': ['tests/discuss-it/no-telemetry.mjs'],
   photos: ['tests/discuss-it/background-image.mjs'],
   'photos:chromium': ['BROWSER=chromium', 'tests/discuss-it/background-image.mjs'],
   recorder: ['tests/discuss-it/recorder-browser.mjs'],

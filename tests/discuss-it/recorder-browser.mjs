@@ -50,7 +50,12 @@ try {
   const errors = []
   page.on('console', message => console.log('browser:', message.text()))
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto(`http://127.0.0.1:${server.address().port}`)
+  // No telemetry (docs/adr/0001-no-telemetry.md): the recorder may request nothing from another
+  // origin. Such requests are recorded and aborted, so even a failing run sends nothing out.
+  const origin = `http://127.0.0.1:${server.address().port}`
+  const offsite = []
+  await page.context().route(url => url.origin !== origin && !['data:', 'blob:'].includes(url.protocol), route => { offsite.push(route.request().url()); return route.abort() })
+  await page.goto(origin)
   if (process.env.FAIL_WORKER === '1') await page.evaluate(() => { window.Worker = class { constructor () { throw new Error('Injected worker-unavailable condition') } } })
   // Replace capture methods on the prototype: WebKit can garbage-collect the
   // navigator.mediaDevices wrapper and drop instance overrides, which would make
@@ -250,6 +255,7 @@ try {
     return { states, errors, tests, format: recordingFormat(), audioBytes, skipAudioOnly }
   }, { backgrounds, skipAudioOnly: process.env.BROWSER === 'webkit', assetBase, synthetic: process.env.BROWSER === 'webkit', expectWorker })
   assert.deepEqual(errors, [])
+  assert.deepEqual(offsite, [], 'The recorder requested something from another origin')
   assert.deepEqual(result.errors, [])
   assert.equal(result.tests.length, backgrounds.length)
   console.log(JSON.stringify(result, null, 2))
