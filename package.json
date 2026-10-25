@@ -26,5 +26,5 @@
     "test:all": "node tests/run.mjs"
   },
   "dependencies": { "@mediapipe/tasks-vision": "0.10.32" },
-  "devDependencies": { "vue": "2.7.16", "playwright": "1.61.1" }
+  "devDependencies": { "vue": "2.7.16", "playwright": "1.64.1" }
 }
