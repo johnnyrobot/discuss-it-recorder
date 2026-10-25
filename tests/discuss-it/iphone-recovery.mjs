@@ -27,6 +27,16 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1' })
   page.on('pageerror', error => console.log('Test page error:', error.message))
+  // The recorder uploads nothing: it only fetches its own files. Other requests are recorded
+  // and aborted, so even a failing run sends nothing out.
+  const origin = `http://127.0.0.1:${server.address().port}`
+  const sent = []
+  await page.context().route(url => !['data:', 'blob:'].includes(url.protocol), route => {
+    const request = route.request()
+    if (new URL(request.url()).origin === origin && request.method() === 'GET') return route.continue()
+    sent.push(`${request.method()} ${request.url()}`)
+    return route.abort()
+  })
   const installCapture = () => {
     window.captureRequests = 0
     window.rejectPlayback = true
@@ -201,15 +211,15 @@ try {
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: 'Retake', exact: true }).click()
   await page.getByRole('button', { name: 'Start recording', exact: true }).waitFor({ timeout: 60000 })
-  // Drop every recorded chunk, as if the microphone stopped before the first one arrived.
-  // Still wait before ending it: in Playwright's WebKit, a take stopped within moments of
-  // starting sometimes never finishes.
+  // Drop every recorded chunk, as if the microphone stopped before the first one arrived, and
+  // end the take at once. In WebKit, a take stopped this soon sometimes never finishes; the
+  // recorder then gives it up a few seconds later with the same explanation.
   await page.evaluate(() => {
-    const handler = Object.getOwnPropertyDescriptor(MediaRecorder.prototype, 'ondataavailable')
-    Object.defineProperty(MediaRecorder.prototype, 'ondataavailable', { configurable: true, get: handler.get, set (listener) { handler.set.call(this, listener && (() => {})) } })
+    window.recorderApi = Object.fromEntries(['stop', 'ondataavailable', 'onstop', 'onerror'].map(name => [name, Object.getOwnPropertyDescriptor(MediaRecorder.prototype, name)]))
+    const { get, set } = window.recorderApi.ondataavailable
+    Object.defineProperty(MediaRecorder.prototype, 'ondataavailable', { configurable: true, get, set (listener) { set.call(this, listener && (() => {})) } })
   })
   await page.getByRole('button', { name: 'Start recording', exact: true }).click()
-  await page.waitForTimeout(1200)
   await loseMicrophone()
   await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).waitFor()
   assert.equal(await page.getByRole('alert').innerText(), 'Camera or microphone disconnected. Please prepare a new recording.')
@@ -217,4 +227,36 @@ try {
   assert.deepEqual(await page.evaluate(() => window.recordedEvents), [...recorded, null], 'An empty take is never emitted')
   assert.deepEqual((await page.evaluate(() => window.recordingEvents)).slice(-2), [true, false], 'An empty take still ends `recording`')
   console.log('PASS a microphone that stops before anything is recorded asks to prepare again')
+  // In WebKit, a take stopped moments after it starts can leave MediaRecorder silent: it goes
+  // inactive, but neither stop nor error ever fires. Here every recorder that is told to stop
+  // does that. A few seconds after Stop & review, the student is asked to record again, with
+  // nothing offered for review or to the host, and the camera and microphone are released.
+  await page.evaluate(() => {
+    const { stop, ...handlers } = window.recorderApi
+    const silenced = new WeakSet()
+    MediaRecorder.prototype.stop = function () { silenced.add(this); return stop.value.call(this) }
+    for (const [name, { get, set }] of Object.entries(handlers)) {
+      Object.defineProperty(MediaRecorder.prototype, name, { configurable: true, get, set (listener) { set.call(this, listener && (event => { if (!silenced.has(this)) listener(event) })) } })
+    }
+  })
+  await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).click()
+  await page.getByRole('button', { name: 'Start recording', exact: true }).waitFor({ timeout: 60000 })
+  const offered = await page.evaluate(() => window.recordedEvents.slice())
+  await page.getByRole('button', { name: 'Start recording', exact: true }).click()
+  await page.waitForTimeout(600)
+  await page.getByRole('button', { name: 'Stop & review', exact: true }).click()
+  const stopped = Date.now()
+  await page.getByRole('status').filter({ hasText: 'Finishing your recording…' }).waitFor()
+  await page.getByRole('button', { name: 'Enable camera & microphone', exact: true }).waitFor({ timeout: 6000 }).catch(async () => {
+    throw Error(`A take that never finishes must be given up: 6 s after Stop & review the recorder still says "${(await page.getByRole('status').innerText()).trim()}"`)
+  })
+  const waited = Date.now() - stopped
+  assert.equal(await page.getByRole('alert').innerText(), 'Recording could not be finished. Please record again.')
+  assert.equal(await page.getByLabel('Review recording', { exact: true }).count(), 0, 'A take that never finishes is not shown for review')
+  assert.equal(await page.getByRole('link', { name: 'Download a copy', exact: true }).count(), 0, 'A take that never finishes is not offered for download')
+  assert.deepEqual(await page.evaluate(() => window.recordedEvents), offered, 'A take that never finishes is never emitted')
+  assert.deepEqual((await page.evaluate(() => window.recordingEvents)).slice(-2), [true, false], 'A take that never finishes still ends `recording`')
+  assert.ok(await page.evaluate(() => window.cameraStream.getTracks().every(track => track.readyState === 'ended')), 'A take that never finishes releases the camera and microphone')
+  console.log(`PASS a take that never finishes is given up ${waited} ms after Stop & review and asks to record again`)
+  assert.deepEqual(sent, [], 'The recorder sent a request that was not for its own files')
 } finally { await browser.close(); server.close() }

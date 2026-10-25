@@ -51,10 +51,18 @@ try {
   page.on('console', message => console.log('browser:', message.text()))
   page.on('pageerror', error => errors.push(error.message))
   // No telemetry (docs/adr/0001-no-telemetry.md): the recorder may request nothing from another
-  // origin. Such requests are recorded and aborted, so even a failing run sends nothing out.
+  // origin, and uploads nothing anywhere: it only fetches its own files. Other requests are
+  // recorded and aborted, so even a failing run sends nothing out.
   const origin = `http://127.0.0.1:${server.address().port}`
   const offsite = []
-  await page.context().route(url => url.origin !== origin && !['data:', 'blob:'].includes(url.protocol), route => { offsite.push(route.request().url()); return route.abort() })
+  const uploads = []
+  await page.context().route(url => !['data:', 'blob:'].includes(url.protocol), route => {
+    const request = route.request()
+    if (new URL(request.url()).origin !== origin) offsite.push(request.url())
+    else if (request.method() !== 'GET') uploads.push(`${request.method()} ${request.url()}`)
+    else return route.continue()
+    return route.abort()
+  })
   await page.goto(origin)
   if (process.env.FAIL_WORKER === '1') await page.evaluate(() => { window.Worker = class { constructor () { throw new Error('Injected worker-unavailable condition') } } })
   // Replace capture methods on the prototype: WebKit can garbage-collect the
@@ -214,22 +222,61 @@ try {
       recorder = new Recorder(canvas, state => seen.push(state), error => explained.push(error.message), { assetBase })
       await recorder.prepare({ background: 'none' })
       const take = recorder.start()
-      // Drop the recorded chunks for a take with nothing recorded. Still wait before ending
-      // it: in Playwright's WebKit, a take stopped within moments of starting sometimes never finishes.
+      // A take with nothing recorded ends at once, with its chunks dropped. In WebKit, a take
+      // stopped this soon sometimes never finishes, so this also covers a lost device given up
+      // by the finish timeout. The other takes record for a moment first.
       if (name === 'track end with no data') recorder.recorder.ondataavailable = () => {}
-      await new Promise(resolve => setTimeout(resolve, 1200))
+      else await new Promise(resolve => setTimeout(resolve, 1200))
+      const interrupted = performance.now()
       interrupt(recorder)
       let clip = null
       let rejected = null
       try { clip = await take } catch (error) { rejected = error.message }
+      const settled = Math.round(performance.now() - interrupted)
       if (JSON.stringify(explained) !== JSON.stringify([expected])) throw Error(`${name}: onError must explain once (${explained})`)
       if (expected === disconnected) {
         if (rejected !== disconnected || recorder.state !== 'idle' || seen.includes('review')) throw Error(`${name}: must reject without review (${rejected}; ${seen})`)
       } else if (!clip || !clip.blob.size || recorder.state !== 'review') throw Error(`${name}: must keep the clip for review (${rejected}; ${seen})`)
       if (recorder.stream) throw Error(`${name}: must release the camera and microphone`)
       recorder.dispose()
-      console.log(`PASS ${name}`)
+      console.log(`PASS ${name}, settled after ${settled} ms`)
     }
+    // In WebKit, a take stopped moments after it starts can leave MediaRecorder silent: it goes
+    // inactive, but neither stop nor error ever fires. Here every recorder that is told to stop
+    // does that. The take must still end within a few seconds with no clip, every track released
+    // and the reason given once. A take stopped by an error was already explained with a promise
+    // of review, so the reason replaces that explanation. A take disposed of meanwhile is
+    // rejected as cancelled and explains nothing.
+    const unfinished = 'Recording could not be finished. Please record again.'
+    const silenced = new WeakSet()
+    const recorderApi = Object.fromEntries(['stop', 'ondataavailable', 'onstop', 'onerror'].map(name => [name, Object.getOwnPropertyDescriptor(MediaRecorder.prototype, name)]))
+    MediaRecorder.prototype.stop = function () { silenced.add(this); return recorderApi.stop.value.call(this) }
+    for (const name of ['ondataavailable', 'onstop', 'onerror']) {
+      const { get, set } = recorderApi[name]
+      Object.defineProperty(MediaRecorder.prototype, name, { configurable: true, get, set (listener) { set.call(this, listener && (event => { if (!silenced.has(this)) listener(event) })) } })
+    }
+    try {
+      for (const [name, end, expected, explanations] of [['Stop', take => take.stop(), unfinished, [unfinished]], ['track end', loseMicrophone, disconnected, [disconnected]], ['a hidden page', hidePage, unfinished, [backgrounded, unfinished]], ['disposal', take => take.dispose(), 'AbortError', []]]) {
+        const seen = []
+        const explained = []
+        recorder = new Recorder(canvas, state => seen.push(state), error => explained.push(error.message), { assetBase })
+        await recorder.prepare({ background: 'none' })
+        const tracks = recorder.stream.getTracks()
+        const take = recorder.start()
+        await new Promise(resolve => setTimeout(resolve, 600))
+        const ended = performance.now()
+        end(recorder)
+        const outcome = await Promise.race([take.then(() => 'a clip', error => error.name === 'AbortError' ? error.name : error.message), new Promise(resolve => setTimeout(() => resolve('still finishing after 6 s'), 6000))])
+        const waited = performance.now() - ended
+        if (outcome !== expected) throw Error(`A take that never finishes, ended by ${name}: expected ${expected}, got ${outcome} (${seen})`)
+        if (waited < 2900) throw Error(`A take that never finishes, ended by ${name}: gave up after ${Math.round(waited)} ms, before MediaRecorder had 3 s to finish`)
+        if (JSON.stringify(explained) !== JSON.stringify(explanations)) throw Error(`A take that never finishes, ended by ${name}: onError must explain ${JSON.stringify(explanations)}, not ${JSON.stringify(explained)}`)
+        if (recorder.state !== (expected === 'AbortError' ? 'disposed' : 'idle') || seen.includes('review')) throw Error(`A take that never finishes, ended by ${name}: wrong state (${seen})`)
+        if (recorder.stream || recorder.output || tracks.some(track => track.readyState !== 'ended')) throw Error(`A take that never finishes, ended by ${name}: must release the camera and microphone`)
+        recorder.dispose()
+        console.log(`PASS a take that never finishes, ended by ${name}, is given up after ${Math.round(waited)} ms`)
+      }
+    } finally { for (const [name, descriptor] of Object.entries(recorderApi)) Object.defineProperty(MediaRecorder.prototype, name, descriptor) }
     let audioBytes = null
     if (!skipAudioOnly) {
       recorder = new Recorder(canvas, state => states.push(state), error => errors.push(error.message), { assetBase })
@@ -256,6 +303,7 @@ try {
   }, { backgrounds, skipAudioOnly: process.env.BROWSER === 'webkit', assetBase, synthetic: process.env.BROWSER === 'webkit', expectWorker })
   assert.deepEqual(errors, [])
   assert.deepEqual(offsite, [], 'The recorder requested something from another origin')
+  assert.deepEqual(uploads, [], 'The recorder sent something to the page\'s origin')
   assert.deepEqual(result.errors, [])
   assert.equal(result.tests.length, backgrounds.length)
   console.log(JSON.stringify(result, null, 2))

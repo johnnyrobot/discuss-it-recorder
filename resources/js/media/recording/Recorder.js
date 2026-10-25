@@ -15,6 +15,10 @@ export function extensionFor (mimeType) {
 }
 
 const disconnected = 'Camera or microphone disconnected. Please prepare a new recording.'
+const unfinished = 'Recording could not be finished. Please record again.'
+// How long a take may stay finishing after stop() before it is given up. Takes in WebKit
+// and Chromium finish within a fraction of a second, so this only ends one that never will.
+const FINISH_TIMEOUT_MS = 3000
 
 export default class Recorder {
   constructor (canvas, onState = () => {}, onError = () => {}, { assetBase } = {}) {
@@ -188,6 +192,22 @@ export default class Recorder {
     try {
       recorder = new MediaRecorder(output, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: 1200000, audioBitsPerSecond: 64000 })
       result = new Promise((resolve, reject) => {
+        const finish = next => {
+          // The handlers hold this take's promise and Blob; drop them so a later prepare() frees it.
+          // Events from a take already given up then go nowhere.
+          clearTimeout(this.finishTimer); this.giveUp = null
+          recorder.ondataavailable = recorder.onerror = recorder.onstop = null
+          this.chunks = []; this.deviceLost = false; ++this.generation; this.release(); if (this.state !== 'disposed') this.setState(next)
+        }
+        // In WebKit, a take stopped moments after it starts can leave MediaRecorder silent: neither
+        // stop nor error ever fires. stop() starts this; without a stop event in time, the take is
+        // given up rather than left finishing forever. Nothing it recorded is kept.
+        this.giveUp = () => {
+          const cancelled = this.state === 'disposed'
+          const error = cancelled ? new DOMException('The recording was cancelled.', 'AbortError') : new Error(this.deviceLost ? disconnected : unfinished)
+          reject(error)
+          try { if (!cancelled) this.onError(error) } finally { finish('idle') }
+        }
         recorder.ondataavailable = ({ data }) => {
           if (data.size) { this.chunks.push(data); this.bytes += data.size }
           if (this.bytes >= 75000000 && this.state === 'recording') this.stop()
@@ -214,11 +234,7 @@ export default class Recorder {
           } catch (error) {
             reject(error)
             if (next === 'idle') this.onError(error)
-          } finally {
-            // The handlers hold this take's promise and Blob; drop them so a later prepare() frees it.
-            recorder.ondataavailable = recorder.onerror = recorder.onstop = null
-            this.chunks = []; this.deviceLost = false; ++this.generation; this.release(); if (this.state !== 'disposed') this.setState(next)
-          }
+          } finally { finish(next) }
         }
       })
       // A consumer may await stop later; avoid an unhandled rejection in the meantime.
@@ -239,7 +255,11 @@ export default class Recorder {
   }
 
   stop () {
-    if (this.state === 'recording') { this.setState('finalizing'); if (this.recorder.state !== 'inactive') this.recorder.stop() }
+    if (this.state === 'recording') {
+      this.setState('finalizing')
+      this.finishTimer = setTimeout(this.giveUp, FINISH_TIMEOUT_MS)
+      if (this.recorder.state !== 'inactive') this.recorder.stop()
+    }
     if (this.result) return this.result
     const none = Promise.reject(new DOMException('No recording has been started.', 'InvalidStateError'))
     none.catch(() => {})
