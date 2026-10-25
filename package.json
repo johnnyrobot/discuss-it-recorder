@@ -5,6 +5,7 @@
   "type": "module",
   "description": "On-device video recording, camera switching, mirroring and virtual backgrounds, with a Vue 2 adapter and ADAPT integration reference.",
   "license": "MIT",
+  "engines": { "node": ">=22.2" },
   "exports": {
     ".": "./resources/js/media/recording/Recorder.js",
     "./vue2": "./resources/js/components/recording/VideoRecorder.vue"

@@ -65,6 +65,8 @@ npm run test:all
 
 Tests use synthetic media, not your camera, microphone or ADAPT accounts. On macOS, image tests generate a synthetic HEIC with `sips`; other systems skip that native-codec check. Browser automation is not a real iPhone hardware test.
 
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the build, `npm test` and `npm run test:all` with Chromium and WebKit on Ubuntu for every pull request and push to `main`. The HEIC check is skipped there, so it runs only on macOS.
+
 Reported physical-device results: Android Chrome works; iPhone Chrome front camera with Blur works. Custom-photo loading received a follow-up fix and passes `npm run test:ui:photo` and `npm run test:ui:decoder`; final physical-iPhone confirmation remains pending. See [validation and limitations](docs/VALIDATION.md).
 
 ## Sharing and licensing
