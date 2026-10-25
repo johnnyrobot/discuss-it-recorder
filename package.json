@@ -1,6 +1,6 @@
 {
   "name": "@johnnylibretexts/discuss-it-recorder",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "On-device video recording, camera switching, mirroring and virtual backgrounds, with a Vue 2 adapter and ADAPT integration reference.",
