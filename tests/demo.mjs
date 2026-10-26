@@ -4,6 +4,8 @@ import { chromium } from 'playwright'
 process.env.PORT = '0'
 const { default: server } = await import('../scripts/demo.mjs')
 if (!server.listening) await once(server, 'listening')
+// Paths named after built-in object keys are neither pages nor files, and must not stop the server.
+for (const name of ['constructor', '__proto__', 'toString']) assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/${name}`)).status, 404, `/${name} must be a 404`)
 const browser = await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
