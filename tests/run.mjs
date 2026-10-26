@@ -6,7 +6,7 @@
 // Test settings come only from the arguments and this list, so flags exported in the
 // caller's shell cannot silently change what a variant runs.
 import { spawnSync } from 'node:child_process'
-const settings = ['BROWSER', 'IPHONE', 'FAIL_WORKER', 'FAIL_ENUMERATION', 'IMAGE', 'BACKGROUND']
+const settings = ['BROWSER', 'IPHONE', 'FAIL_WORKER', 'FAIL_ENUMERATION', 'IMAGE', 'BACKGROUND', 'DEMO_URL']
 const variants = {
   'no-telemetry': ['tests/discuss-it/no-telemetry.mjs'],
   photos: ['tests/discuss-it/background-image.mjs'],
@@ -19,7 +19,9 @@ const variants = {
   ui: ['tests/discuss-it/iphone-recovery.mjs'],
   'ui:photo': ['IMAGE=1', 'tests/discuss-it/iphone-recovery.mjs'],
   'ui:decoder': ['IMAGE=decoder', 'tests/discuss-it/iphone-recovery.mjs'],
-  demo: ['tests/demo.mjs']
+  demo: ['tests/demo.mjs'],
+  'demo:site': ['tests/demo-site.mjs'],
+  'demo:site:webkit': ['BROWSER=webkit', 'tests/demo-site.mjs']
 }
 const isSetting = arg => /^[A-Z_]+=/.test(arg)
 const args = process.argv.slice(2)

@@ -13,10 +13,12 @@
   "scripts": {
     "build": "node scripts/build-discuss-it-assets.cjs",
     "demo": "node scripts/demo.mjs",
+    "build:demo": "node scripts/build-demo.mjs",
     "test": "node tests/run.mjs no-telemetry photos recorder",
     "test:no-telemetry": "node tests/run.mjs no-telemetry",
     "test:ui": "node tests/run.mjs ui",
     "test:demo": "node tests/run.mjs demo",
+    "test:demo:site": "node tests/run.mjs demo:site demo:site:webkit",
     "test:photos:chromium": "node tests/run.mjs photos:chromium",
     "test:webkit": "node tests/run.mjs webkit",
     "test:iphone": "node tests/run.mjs iphone",

@@ -12,7 +12,9 @@ npm run build
 npm run demo
 ```
 
-Open `http://127.0.0.1:4173`. Allow camera/microphone, choose a look, record, review and download. The demo has **no Submit/upload function**. Localhost is a secure-context exception; real phone testing requires serving the demo through your own HTTPS development setup. The server intentionally binds to loopback and is not a production server.
+Open `http://127.0.0.1:4173`. Allow camera/microphone, choose a look, record, review and download. The demo has **no Submit/upload function**. Localhost is a secure-context exception; to test on a real phone, use the hosted demo below or serve the demo through your own HTTPS setup. The server intentionally binds to loopback and is not a production server.
+
+A hosted copy, built from `main`, is at <https://johnnyrobot.github.io/discuss-it-recorder/>. It shows the recorder version and the commit it was built from, and **Audio only** (`?audio`) opens the audio-only recorder. [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds it on every push to `main` with `npm run build:demo`, a static copy of the same demo, checks it, and publishes it with GitHub Pages. Like the local demo it uploads nothing and loads every file from its own site.
 
 ## What is reusable?
 
@@ -58,14 +60,15 @@ npx playwright install chromium webkit
 npm test
 npm run test:ui
 npm run test:demo
+npm run test:demo:site
 npm run test:all
 ```
 
-`npm run test:all` runs every variant one after another. Each also has its own script: `test:no-telemetry` (the MediaPipe pin, and a scan of the shipped files for Google API hosts, Google's API key header and known analytics and logging endpoints; see [ADR 0001](docs/adr/0001-no-telemetry.md)), `test:photos:chromium`, `test:webkit`, `test:iphone` (iPhone user agent, main-thread effects), `test:worker-failure`, `test:enumeration-failure`, `test:ui:photo` (a photo over 5 MB as the background) and `test:ui:decoder` (photo loading without `createImageBitmap`). All of them are defined once, in `tests/run.mjs`. `node tests/run.mjs KEY=value file.mjs` runs any test file with environment settings on any shell, and `node tests/run.mjs BACKGROUND=none webkit` adds settings to a named variant. Test settings come only from these arguments; ones exported in your shell are ignored.
+`npm run test:all` runs every variant one after another. Each also has its own script: `test:no-telemetry` (the MediaPipe pin, and a scan of the shipped files for Google API hosts, Google's API key header and known analytics and logging endpoints; see [ADR 0001](docs/adr/0001-no-telemetry.md)), `test:photos:chromium`, `test:webkit`, `test:iphone` (iPhone user agent, main-thread effects), `test:worker-failure`, `test:enumeration-failure`, `test:ui:photo` (a photo over 5 MB as the background), `test:ui:decoder` (photo loading without `createImageBitmap`) and `test:demo:site` (the static demo served under `/discuss-it-recorder/` as GitHub Pages does, in Chromium and WebKit; `npm run test:demo:site -- DEMO_URL=https://johnnyrobot.github.io/discuss-it-recorder/` checks the hosted copy instead). All of them are defined once, in `tests/run.mjs`. `node tests/run.mjs KEY=value file.mjs` runs any test file with environment settings on any shell, and `node tests/run.mjs BACKGROUND=none webkit` adds settings to a named variant. Test settings come only from these arguments; ones exported in your shell are ignored.
 
 Tests use synthetic media, not your camera, microphone or ADAPT accounts. On macOS, image tests generate a synthetic HEIC with `sips`; other systems skip that native-codec check. Browser automation is not a real iPhone hardware test.
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request and push to `main`. On Ubuntu it runs the build, `npm test` and the variants that record in Chromium. Playwright's Linux WebKit has no `MediaRecorder`, so a macOS job runs the full `npm run test:all`, including WebKit recording and the HEIC check.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request and push to `main`. On Ubuntu it runs the build, `npm test` and the variants that record in Chromium. Playwright's Linux WebKit has no `MediaRecorder`, so a macOS job runs the full `npm run test:all`, including WebKit recording and the HEIC check. [`.github/workflows/pages.yml`](.github/workflows/pages.yml) publishes the demo from `main`.
 
 Reported physical-device results: Android Chrome works; iPhone Chrome front camera with Blur works. Custom-photo loading received a follow-up fix and passes `npm run test:ui:photo` and `npm run test:ui:decoder`; final physical-iPhone confirmation remains pending. See [validation and limitations](docs/VALIDATION.md).
 
