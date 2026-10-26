@@ -41,6 +41,8 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    # A manual run from another branch only builds and checks the site.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
