@@ -1,8 +1,128 @@
-# ADAPT integration reference
+# Add the recorder to LibreTexts ADAPT
 
-## Recommended: add only the recorder
+LibreTexts ADAPT already has Discuss-It. Its `resources/js/components/NativeAudioVideoRecorder.vue` records discussion comments, `submission` uploads and `submitted-work` uploads with its own `getUserMedia`/`MediaRecorder` code. This guide replaces that code with the recorder, so one change covers all three. The server side does not change: the pre-signed upload, storage, threads and permissions stay as they are.
 
-LT's ADAPT (`master`) already has Discuss-It, so **integrate only the recorder** into its existing response UI and upload pipeline. There is no need to replace the discussion subsystem. Replace the raw `getUserMedia`/`MediaRecorder` code in `resources/js/components/NativeAudioVideoRecorder.vue` with the Vue adapter or `Recorder.js`, as [the main README](../../README.md#add-it-to-libretexts-adapt) describes step by step: copy the recorder resources, install `@mediapipe/tasks-vision@0.10.35`, stage the runtime assets on ADAPT's own origin or on its asset CDN, and pass the adapter's `recorded` result to the existing upload only after the student submits. When the built assets are served only from a CDN at `ASSET_URL`, the recorder needs an `assetBase` naming the CDN directory and CORS headers from the CDN on those files. If either is missing, every background but None fails with "Background effects could not start…".
+Follow this guide from top to bottom in an ADAPT checkout. It was last checked on 2026-10-29 against ADAPT `master` at `1486f96c` (2026-10-27), with Node 22.20.0, Laravel Mix 4.1.4 and webpack 4.44.1 (see [validation](../../docs/VALIDATION.md)).
+
+One ADAPT bug is outside this change. At `1486f96c`, the phone audio recorder in `resources/js/components/SubmitWork.vue` listens for `saveComment`, but `NativeAudioVideoRecorder.vue` has emitted `storeSubmittedWork` for `submitted-work` since `e33e6d3a`. A phone audio take of submitted work therefore uploads, but `SubmitWork.vue` never saves it. The patch does not touch `SubmitWork.vue`; fix that listener separately (`@storeSubmittedWork`, as its video recorder already uses).
+
+## What changes in ADAPT
+
+Copied unchanged from the v0.1.8 tag:
+
+- `resources/js/components/recording/VideoRecorder.vue`, the Vue 2 adapter
+- `resources/js/media/recording/`, the recorder
+- `resources/vendor/discuss-it/`, the pinned segmentation model with its license and checksum
+- `scripts/build-discuss-it-assets.cjs`, which stages the runtime in `public/assets/discuss-it/`
+
+Edited by [`recorder.patch`](recorder.patch):
+
+- `resources/js/components/NativeAudioVideoRecorder.vue` uses `VideoRecorder`, passes it the asset directory, and uploads only after **Submit recording**, with the recording's own MIME type and extension (Safari records MP4).
+- `resources/js/components/viewers/DiscussItViewer.vue`: a retake resets the length requirement.
+- `package.json` adds the `build:recorder-assets` and `test:recorder` scripts, runs `build:recorder-assets` before `development` and `production`, and adds `@mediapipe/tasks-vision` 0.10.35 and `playwright` 1.64.1.
+- `.gitignore` ignores the generated `public/assets/discuss-it/`.
+- `tests/Browser/native-recorder.mjs` is the browser check.
+- `docs/recorder-integration.md` describes the integration for ADAPT developers.
+
+The patch leaves out `package-lock.json`, which step 4 updates. At `1486f96c`, `NativeAudioVideoRecorder.vue` was last changed in `e33e6d3a` (2025-11-20) and `DiscussItViewer.vue` in `23be8615` (2026-10-20).
+
+## 1. Before you start
+
+- Use Node 22.2 or newer (`node --version`), the oldest version the recorder supports (`engines` in its `package.json`). The machine that runs the Vapor build needs it too, and so does any other build of ADAPT's front end. ADAPT's root `Dockerfile` installs Debian's Node 12 on `php:7.4-apache`, which is too old: update its Node before you build that image.
+- Start on a new branch in a clean ADAPT checkout: `git status` shows nothing to commit.
+- Get the recorder at the release tag:
+
+```sh
+ADAPT=/path/to/adapt
+RECORDER="$(mktemp -d)/discuss-it-recorder"
+git clone --depth 1 --branch v0.1.8 https://github.com/johnnyrobot/discuss-it-recorder.git "$RECORDER"
+```
+
+## 2. Copy the recorder files
+
+```sh
+git -C "$RECORDER" archive v0.1.8 \
+  resources/js/components/recording \
+  resources/js/media/recording \
+  resources/vendor/discuss-it \
+  scripts/build-discuss-it-assets.cjs | tar -x -C "$ADAPT"
+```
+
+`git -C "$ADAPT" status --short` now lists them as untracked.
+
+## 3. Apply the ADAPT edits
+
+```sh
+cd "$ADAPT"
+git apply --check "$RECORDER/integrations/adapt/recorder.patch"
+git apply "$RECORDER/integrations/adapt/recorder.patch"
+```
+
+`--check` prints nothing when the patch applies. If it fails, `master` has changed one of the six files since `1486f96c`. Don't force it: compare the failing hunk with the current file and port it by hand, keeping the behaviour the patch's `docs/recorder-integration.md` describes.
+
+## 4. Install the pinned runtime
+
+```sh
+npm install --save-exact @mediapipe/tasks-vision@0.10.35
+```
+
+This installs ADAPT's dependencies and the two the patch adds, and updates `package-lock.json`. Afterwards `git diff package.json` shows only the patch's changes. Keep the `package-lock.json` change: Vapor builds with `npm ci`, which fails when the lock does not match `package.json`. MediaPipe stays at exactly 0.10.35 under the recorder's [no-telemetry decision](../../docs/adr/0001-no-telemetry.md); do not upgrade it to 1.x.
+
+## 5. Run the browser check
+
+```sh
+npx playwright install chromium webkit
+npm run build:recorder-assets
+npm run test:recorder
+```
+
+The check loads the runtime from `public/assets/discuss-it/`, so stage the assets first. It prints 44 `PASS` lines, 22 cases in each of Chromium and WebKit (listed in `docs/recorder-integration.md`), and exits 0. It uses synthetic capture and a local upload receiver: no ADAPT server, account, database, camera or object storage. Run it on macOS: Playwright's Linux WebKit has no `MediaRecorder`.
+
+## 6. Build for production
+
+```sh
+npm run production
+```
+
+`production` stages the assets again before it builds. Then check:
+
+- `public/assets/discuss-it/` holds `segmenter-worker.js`, `vision_bundle.js`, `vision_module.js`, `selfie_segmenter.tflite`, `LICENSE.txt`, `manifest.json` and a `wasm/` folder with `vision_wasm_internal.js`, `vision_wasm_internal.wasm`, `vision_wasm_nosimd_internal.js` and `vision_wasm_nosimd_internal.wasm`.
+- `manifest.json` names version `0.10.35`.
+- The build log's `Asset URL:` line, printed by `webpack.mix.js`, is `/` without `ASSET_URL`, or `ASSET_URL` followed by `/`.
+- `grep -rho '"[^"]*assets/discuss-it/"' public/dist/js | sort -u` lists the asset directories in the bundle. Built with `ASSET_URL=https://assets.example.test`, it includes `"https://assets.example.test/assets/discuss-it/"`, the directory `NativeAudioVideoRecorder.vue` passes to the recorder. `"/assets/discuss-it/"` is always listed too: it is the recorder's own default. Built without `ASSET_URL`, that is the only line.
+
+## 7. Commit
+
+Commit the copied files, the patched files and `package-lock.json`. `public/assets/discuss-it/` is generated and ignored by Git.
+
+Afterwards:
+
+- Keep the copied files as they are. ADAPT's `npm run lint` fixes files under `resources/js` in place, so revert any change it makes to the copied recorder files.
+- For live rebuilds use `npm run watch`: it runs `development`, which stages the assets. At `1486f96c`, `npm run hot` runs neither that hook nor the `--openssl-legacy-provider` option that `dev`, `watch` and `production` set.
+
+## Deploy on Vapor
+
+ADAPT's `vapor.yml` builds with `npm ci && npm run prod`. `prod` runs `production`, whose `preproduction` hook stages `public/assets/discuss-it/`, so the deploy needs no extra step. Vapor uploads `public/` to S3 and serves it from CloudFront at `ASSET_URL`, not from the app's own domain.
+
+- **`ASSET_URL` must be set when the bundle is built.** Vapor sets it for the build. `webpack.mix.js` turns it into `process.env.ASSET_PATH`, and the recorder loads its runtime from `ASSET_URL` followed by `/assets/discuss-it/`. If it is not set, the recorder falls back to `/assets/discuss-it/` on the app's own domain, which Vapor does not serve, and every background but None fails with "Background effects could not start…". The build log's `Asset URL:` line shows the value used.
+- **The build runs where `vapor deploy` runs**, on that machine or CI job, not on Lambda, so it needs Node 22.2 or newer.
+- **Check the asset CDN on staging** before production:
+
+```sh
+APP_ORIGIN='https://<staging app host>'
+ASSETS='<staging ASSET_URL>/assets/discuss-it'
+for file in segmenter-worker.js wasm/vision_wasm_internal.wasm selfie_segmenter.tflite; do
+  echo "$file"
+  curl -s -o /dev/null -D - -H "Origin: $APP_ORIGIN" "$ASSETS/$file" | grep -iE '^(HTTP/|access-control-allow-origin|content-type)'
+done
+```
+
+Each request is a GET, like the browser's. Expect status 200 and `access-control-allow-origin` (the app's origin or `*`) on all three, and `content-type: application/wasm` on the `.wasm`. Then sign in to staging, open a Discuss-It question and record one take with **Blur**: the preview blurs, and after **Submit recording** the take uploads and plays back.
+
+- **If `access-control-allow-origin` is missing**, add a CORS response headers policy to the CloudFront distribution that serves `ASSET_URL` (the AWS managed `SimpleCORS` policy sends `*`), invalidate `/assets/discuss-it/*`, and run the check again. If the `.wasm` has another content type, set `application/wasm` at the CDN or bucket: with any other type the browser cannot compile it as it downloads, and MediaPipe falls back to a slower load.
+- **Content-Security-Policy.** At `1486f96c` ADAPT sends one only for its sketcher page. If the deployment adds one for the app, it must allow the asset origin in `script-src` and `connect-src`, `'wasm-unsafe-eval'` in `script-src`, and `blob:` in `worker-src`.
+
+**Not verified by us:** this section's Vapor and CloudFront behaviour. We have no Vapor project, and we have not checked LT's staging or production. The tests prove the cross-origin path only against a second local origin that sends CORS headers (`npm run test:cross-origin` here, and the cross-origin case of `npm run test:recorder` in ADAPT). The staging check above is for LT engineers to run.
 
 ## Archived: `feature.patch`
 
@@ -20,7 +140,7 @@ The patch adds a separate discussion/question-type backend and UI: feature addit
 4. Review the three feature tables/migration and backup policy. The migration deliberately refuses destructive rollback; retaining submitted media and grades is required. Use a disposable test database first.
 5. Review feature API authentication/throttling, the feature-scoped streaming PUT size allowance, private storage configuration and signed playback authorization/range behavior. Do not expose the storage backend directly.
 6. Provide FFmpeg/ffprobe in the host's existing deployment, verify processor binary paths, and schedule `php artisan discuss-it:process-media` with single-run/concurrency control. This handoff intentionally contains no provider-specific, container, or service-manager configuration.
-7. Build the host UI and serve model/worker/WASM/module assets with correct MIME types from `/assets/discuss-it/`, or from another same-origin directory passed to the recorder as `assetBase`. Test normal View Assessments as well as the direct discussion route. The mobile layout hunks stack the Discuss-It assessment column and remove redundant gutters; they must be reconciled with LT's own responsive layout.
+7. Build the host UI and serve model/worker/WASM/module assets with correct MIME types from `/assets/discuss-it/`, or from another same-origin directory passed to the recorder as `assetBase`. (Written for the patch's baseline. Since v0.1.7, `assetBase` may also be on the host's own asset CDN, as described above.) Test normal View Assessments as well as the direct discussion route. The mobile layout hunks stack the Discuss-It assessment column and remove redundant gutters; they must be reconciled with LT's own responsive layout.
 8. Run the provided isolated backend/media checks against the integrated app. Inspect each test's setup before running; use a disposable container with SQLite `:memory:` and no production environment. The recorder tests in the repo root do not require ADAPT.
 9. Verify on real Android Chrome and iPhone Chrome/Safari: permissions, front/rear, mirror, blur, custom photo, interruptions, review, submit, playback and captions. Verify instructor/student roles, groups, deadlines, moderation and grades independently.
 
