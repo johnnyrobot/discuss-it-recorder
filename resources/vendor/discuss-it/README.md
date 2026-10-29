@@ -6,6 +6,6 @@ Downloaded 2026-09-09 from https://storage.googleapis.com/mediapipe-models/image
 SHA256: `191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b`.
 
 The checked-in model is immutable for this release; builds do not fetch `latest`.
-Run `node scripts/build-discuss-it-assets.cjs` to assemble same-origin worker, WASM, and model assets.
+Run `node scripts/build-discuss-it-assets.cjs` to assemble the worker, WASM, and model assets, which the host serves from its own origin or its own asset CDN.
 The generated manifest records hashes. No student's frames are transmitted to Google.
 MediaPipe project/license: https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE

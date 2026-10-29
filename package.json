@@ -1,6 +1,6 @@
 {
   "name": "@johnnylibretexts/discuss-it-recorder",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "description": "On-device video recording, camera switching, mirroring and virtual backgrounds, with a Vue 2 adapter and ADAPT integration reference.",
@@ -24,6 +24,7 @@
     "test:iphone": "node tests/run.mjs iphone",
     "test:worker-failure": "node tests/run.mjs worker-failure",
     "test:enumeration-failure": "node tests/run.mjs enumeration-failure",
+    "test:cross-origin": "node tests/run.mjs cross-origin cross-origin:webkit cross-origin:iphone",
     "test:ui:photo": "node tests/run.mjs ui:photo",
     "test:ui:decoder": "node tests/run.mjs ui:decoder",
     "test:all": "node tests/run.mjs"

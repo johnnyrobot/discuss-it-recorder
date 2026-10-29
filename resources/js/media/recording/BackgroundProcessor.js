@@ -20,13 +20,24 @@ export default class BackgroundProcessor {
     // iOS browser apps share platform-specific capture/WebGL constraints. Use a
     // DOM canvas here rather than relying on worker OffscreenCanvas support.
     if (appleMobile()) return this.initMain()
+    let bootstrap
     try {
-      this.worker = new Worker(`${this.assets}segmenter-worker.js`)
+      const workerUrl = `${this.assets}segmenter-worker.js`
+      if (new URL(workerUrl).origin === location.origin) this.worker = new Worker(workerUrl)
+      else {
+        // Browsers start a worker only from the page's own origin. For a directory on another
+        // origin the host controls, such as its asset CDN, a same-origin blob: script tells
+        // the worker its directory and loads it from there.
+        bootstrap = URL.createObjectURL(new Blob([`self.discussItAssetBase = ${JSON.stringify(this.assets)}\nimportScripts(${JSON.stringify(workerUrl)})\n`], { type: 'text/javascript' }))
+        this.worker = new Worker(bootstrap)
+      }
       await this.request({ type: 'init' }, [], 45000)
     } catch (error) {
       this.stopWorker()
       if (this.closed) throw error
       await this.initMain()
+    } finally {
+      if (bootstrap) URL.revokeObjectURL(bootstrap)
     }
   }
 

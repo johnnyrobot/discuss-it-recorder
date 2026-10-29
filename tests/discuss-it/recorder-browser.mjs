@@ -27,20 +27,41 @@ if (cameraFile) {
 // Runtime assets are served only from a non-default directory, so a hard-coded
 // /assets/discuss-it/ path anywhere in the recorder fails this test. The worker is
 // served from source, not the built copy, so an unbuilt edit is still what is tested.
-const assetBase = '/static/recorder/'
+const assetDirectory = '/static/recorder/'
+// CROSS_ORIGIN=1 serves the assets only from a second local origin, as a host's own asset
+// CDN would, with CORS headers. A copy under /no-cors/ on that origin sends none.
+const crossOrigin = process.env.CROSS_ORIGIN === '1'
 // iPhone mode uses the main thread by design, and FAIL_WORKER removes the worker.
 const expectWorker = process.env.IPHONE !== '1' && process.env.FAIL_WORKER !== '1'
-const server = http.createServer((req, res) => {
-  if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta name="viewport" content="width=device-width"><canvas id="preview"></canvas>'); return }
-  const url = req.url.split('?')[0]
-  const source = ['/Recorder.js', '/BackgroundProcessor.js', '/BackgroundImage.js'].includes(url) ? path.join(root, 'resources/js/media/recording', url.slice(1))
-    : url === `${assetBase}segmenter-worker.js` ? path.join(root, 'resources/js/media/recording/segmenter-worker.js')
-      : url.startsWith(assetBase) ? path.join(root, 'public/assets/discuss-it', url.slice(assetBase.length)) : ''
+const send = (res, source) => {
   if (!source.startsWith(root) || !fs.existsSync(source) || !fs.statSync(source).isFile()) { res.writeHead(404); res.end(); return }
   res.setHeader('Content-Type', /\.m?js$/.test(source) ? 'application/javascript' : source.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream')
   fs.createReadStream(source).pipe(res)
+}
+const assetSource = url => url === `${assetDirectory}segmenter-worker.js` ? path.join(root, 'resources/js/media/recording/segmenter-worker.js')
+  : url.startsWith(assetDirectory) ? path.join(root, 'public/assets/discuss-it', url.slice(assetDirectory.length)) : ''
+const server = http.createServer((req, res) => {
+  if (req.url === '/') {
+    // With assets on another origin, these directives allow only the page and what docs/INTERFACE.md lists.
+    if (crossOrigin) res.setHeader('Content-Security-Policy', `script-src 'self' ${assetOrigin} 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${assetOrigin}`)
+    res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta name="viewport" content="width=device-width"><canvas id="preview"></canvas>'); return
+  }
+  const url = req.url.split('?')[0]
+  send(res, ['/Recorder.js', '/BackgroundProcessor.js', '/BackgroundImage.js'].includes(url) ? path.join(root, 'resources/js/media/recording', url.slice(1))
+    : crossOrigin ? '' : assetSource(url))
+})
+const assetServer = crossOrigin && http.createServer((req, res) => {
+  const url = req.url.split('?')[0]
+  if (url.startsWith('/no-cors/')) { send(res, assetSource(url.slice('/no-cors'.length))); return }
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  send(res, assetSource(url))
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+if (assetServer) await new Promise(resolve => assetServer.listen(0, '127.0.0.1', resolve))
+const origin = `http://127.0.0.1:${server.address().port}`
+const assetOrigin = assetServer ? `http://127.0.0.1:${assetServer.address().port}` : origin
+const assetBase = crossOrigin ? `${assetOrigin}${assetDirectory}` : assetDirectory
+const noCorsBase = crossOrigin ? `${assetOrigin}/no-cors${assetDirectory}` : null
 const browser = process.env.BROWSER === 'webkit' ? await webkit.launch({ headless: true }) : await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-video-capture=${cameraFile}`] })
 const watchdog = setTimeout(async () => { console.error('Browser test timed out'); await browser.close() }, 90000)
 const backgrounds = process.env.BACKGROUND ? [process.env.BACKGROUND] : ['none', 'color', 'blur', 'image']
@@ -50,15 +71,15 @@ try {
   const errors = []
   page.on('console', message => console.log('browser:', message.text()))
   page.on('pageerror', error => errors.push(error.message))
-  // No telemetry (docs/adr/0001-no-telemetry.md): the recorder may request nothing from another
-  // origin, and uploads nothing anywhere: it only fetches its own files. Other requests are
-  // recorded and aborted, so even a failing run sends nothing out.
-  const origin = `http://127.0.0.1:${server.address().port}`
+  // No telemetry (docs/adr/0001-no-telemetry.md): the recorder may request nothing from an
+  // origin other than the page's and the host's asset origin, and uploads nothing anywhere:
+  // it only fetches its own files. Other requests are recorded and aborted, so even a failing
+  // run sends nothing out.
   const offsite = []
   const uploads = []
   await page.context().route(url => !['data:', 'blob:'].includes(url.protocol), route => {
     const request = route.request()
-    if (new URL(request.url()).origin !== origin) offsite.push(request.url())
+    if (![origin, assetOrigin].includes(new URL(request.url()).origin)) offsite.push(request.url())
     else if (request.method() !== 'GET') uploads.push(`${request.method()} ${request.url()}`)
     else return route.continue()
     return route.abort()
@@ -403,9 +424,32 @@ try {
     return { states, errors, tests, format: recordingFormat(), audioFormat: audio.mimeType, audioBytes }
   }, { backgrounds, assetBase, synthetic: process.env.BROWSER === 'webkit', expectWorker })
   assert.deepEqual(errors, [])
-  assert.deepEqual(offsite, [], 'The recorder requested something from another origin')
-  assert.deepEqual(uploads, [], 'The recorder sent something to the page\'s origin')
+  if (noCorsBase) {
+    // An asset origin that sends no CORS headers cannot serve the WASM, model or module to
+    // the page. The preview fails with the usual explanation and keeps the camera, and the
+    // student can still choose None with it. WebKit reports the script load this blocks as a
+    // page error although the page catches it, so this case runs on its own and allows that.
+    await page.evaluate(async noCorsBase => {
+      const { default: Recorder } = await import('/Recorder.js')
+      const seen = []
+      const explained = []
+      const recorder = new Recorder(document.querySelector('canvas'), state => seen.push(state), error => explained.push(error.message), { assetBase: noCorsBase })
+      let refused = ''
+      try { await recorder.prepare({ background: 'blur' }) } catch (error) { refused = error.message }
+      const camera = recorder.stream
+      if (!refused.startsWith('Background effects could not start.')) throw Error(`An asset origin without CORS must fail with the usual explanation, not ${JSON.stringify(refused)}`)
+      if (recorder.state !== 'setup-error' || !camera || !camera.getTracks().every(track => track.readyState === 'live')) throw Error(`An asset origin without CORS must keep the camera (${seen})`)
+      await recorder.prepare({ background: 'none' })
+      if (recorder.state !== 'preview' || recorder.stream !== camera) throw Error(`After an asset origin without CORS, None must preview with the same camera (${seen})`)
+      if (explained.length) throw Error(`A preview that fails reports through prepare(), not onError (${explained})`)
+      recorder.dispose()
+      console.log('PASS an asset origin without CORS fails with the usual explanation and keeps the camera')
+    }, noCorsBase)
+    assert.deepEqual(errors.filter(message => !/Cross-Origin Resource Sharing/.test(message)), [])
+  }
+  assert.deepEqual(offsite, [], 'The recorder requested something from an origin other than the page\'s and its assets\'')
+  assert.deepEqual(uploads, [], 'The recorder sent something to the page\'s or the assets\' origin')
   assert.deepEqual(result.errors, [])
   assert.equal(result.tests.length, backgrounds.length)
   console.log(JSON.stringify(result, null, 2))
-} finally { clearTimeout(watchdog); await browser.close(); server.close() }
+} finally { clearTimeout(watchdog); await browser.close(); server.close(); if (assetServer) assetServer.close() }
