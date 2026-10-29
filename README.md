@@ -43,7 +43,7 @@ recorder.dispose() // Also call on navigation/unmount.
 
 ## Add it to LibreTexts ADAPT
 
-LT's ADAPT (`master`) already has Discuss-It. Follow [the ADAPT install and deploy guide](integrations/adapt/README.md): copy the recorder files from a release tag, apply [`recorder.patch`](integrations/adapt/recorder.patch), install MediaPipe 0.10.35, run `npm run test:recorder`, build with `npm run production`, and check the asset CDN on Vapor. The patch replaces the capture code in `NativeAudioVideoRecorder.vue`, which records discussion comments, `submission` uploads and `submitted-work` uploads, so one change covers all three; the server side does not change.
+LT's ADAPT (`master`) already has Discuss-It. Follow [the ADAPT install and deploy guide](integrations/adapt/README.md): copy the recorder files from a release tag, apply [`recorder.patch`](integrations/adapt/recorder.patch), install MediaPipe 0.10.35, run `npm run test:recorder`, build with `npm run production`, and check the asset CDN on Vapor. The patch replaces the capture code in `NativeAudioVideoRecorder.vue`, which records discussion comments, `submission` uploads and `submitted-work` uploads, so one change covers all three; the server side does not change. Phone audio for submitted work also needs a one-line fix in ADAPT's own `SubmitWork.vue`, described in the guide.
 
 `integrations/adapt/feature.patch` is archived: it adds a separate Discuss-It backend, viewer and question type built against a non-public ADAPT baseline from before Laravel 12, and it does not apply to `master`.
 
