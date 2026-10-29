@@ -87,7 +87,7 @@ npm run production
 - `public/assets/discuss-it/` holds `segmenter-worker.js`, `vision_bundle.js`, `vision_module.js`, `selfie_segmenter.tflite`, `LICENSE.txt`, `manifest.json` and a `wasm/` folder with `vision_wasm_internal.js`, `vision_wasm_internal.wasm`, `vision_wasm_nosimd_internal.js` and `vision_wasm_nosimd_internal.wasm`.
 - `manifest.json` names version `0.10.35`.
 - The build log's `Asset URL:` line, printed by `webpack.mix.js`, is `/` without `ASSET_URL`, or `ASSET_URL` followed by `/`.
-- `grep -rl 'assets/discuss-it/' public/dist/js` finds the bundle that loads the recorder. With `ASSET_URL=https://assets.example.test` it contains `https://assets.example.test/assets/discuss-it/`; without it, `/assets/discuss-it/`.
+- `grep -rho '"[^"]*assets/discuss-it/"' public/dist/js | sort -u` lists the asset directories in the bundle. Built with `ASSET_URL=https://assets.example.test`, it includes `"https://assets.example.test/assets/discuss-it/"`, the directory `NativeAudioVideoRecorder.vue` passes to the recorder. `"/assets/discuss-it/"` is always listed too: it is the recorder's own default. Built without `ASSET_URL`, that is the only line.
 
 ## 7. Commit
 

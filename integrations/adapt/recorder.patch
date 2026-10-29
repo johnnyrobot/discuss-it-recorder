@@ -21,7 +21,7 @@ index 3167e88..33b7e91 100644
 +/public/assets/discuss-it/
 diff --git a/docs/recorder-integration.md b/docs/recorder-integration.md
 new file mode 100644
-index 0000000..b66c292
+index 0000000..ab3e833
 --- /dev/null
 +++ b/docs/recorder-integration.md
 @@ -0,0 +1,102 @@
@@ -70,7 +70,7 @@ index 0000000..b66c292
 +## Where the recorder loads its runtime
 +
 +`NativeAudioVideoRecorder.vue` passes `asset-base` to `VideoRecorder` as
-+`` `${process.env.ASSET_PATH}assets/discuss-it/` ``. `ASSET_PATH` is defined in
++`process.env.ASSET_PATH + 'assets/discuss-it/'`. `ASSET_PATH` is defined in
 +`webpack.mix.js` as `ASSET_URL + '/'`, or `/` when `ASSET_URL` is unset: the
 +same build-time value that already serves the other compiled assets. With
 +`ASSET_URL` set, the worker, WASM and model load from that origin; the
@@ -161,7 +161,7 @@ index 03c8a1f..fe6586f 100644
      "sass": "^1.26.10",
      "sass-loader": "^7.3.1",
 diff --git a/resources/js/components/NativeAudioVideoRecorder.vue b/resources/js/components/NativeAudioVideoRecorder.vue
-index 44a0745..b74b25c 100644
+index 44a0745..25b9cf7 100644
 --- a/resources/js/components/NativeAudioVideoRecorder.vue
 +++ b/resources/js/components/NativeAudioVideoRecorder.vue
 @@ -1,50 +1,34 @@
@@ -248,7 +248,7 @@ index 44a0745..b74b25c 100644
    props: {
      recordingType: {
        type: String,
-@@ -73,184 +59,92 @@ export default {
+@@ -73,184 +59,93 @@ export default {
      }
    },
    data: () => ({
@@ -269,8 +269,9 @@ index 44a0745..b74b25c 100644
 +  computed: {
 +    // ASSET_PATH is webpack's own publicPath (ASSET_URL + '/', or '/'), the build-time
 +    // constant Vapor already relies on to serve compiled assets from CloudFront.
++    // Plain concatenation lets the minifier fold it into one string in the bundle.
 +    assetBase () {
-+      return `${process.env.ASSET_PATH}assets/discuss-it/`
++      return process.env.ASSET_PATH + 'assets/discuss-it/'
 +    }
 +  },
    mounted () {
