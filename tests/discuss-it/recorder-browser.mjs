@@ -42,7 +42,7 @@ const assetSource = url => url === `${assetDirectory}segmenter-worker.js` ? path
   : url.startsWith(assetDirectory) ? path.join(root, 'public/assets/discuss-it', url.slice(assetDirectory.length)) : ''
 const server = http.createServer((req, res) => {
   if (req.url === '/') {
-    // With assets on another origin, the page allows only what docs/INTERFACE.md tells hosts to.
+    // With assets on another origin, these directives allow only the page and what docs/INTERFACE.md lists.
     if (crossOrigin) res.setHeader('Content-Security-Policy', `script-src 'self' ${assetOrigin} 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${assetOrigin}`)
     res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta name="viewport" content="width=device-width"><canvas id="preview"></canvas>'); return
   }
