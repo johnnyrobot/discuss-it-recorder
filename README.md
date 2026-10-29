@@ -21,7 +21,7 @@ A hosted copy, built from `main`, is at <https://johnnyrobot.github.io/discuss-i
 - `resources/js/media/recording/`: framework-independent browser ES modules. Capture, effect processing and encoding stay on-device.
 - `resources/js/components/recording/VideoRecorder.vue`: optional legacy Vue 2 UI. It emits `busy`, `recording` and `recorded`; it does not know about users, courses or uploads. Vue 2 is used only by this adapter/demo; a Vue 3 or other UI can call the same core.
 - `resources/vendor/discuss-it/`: pinned segmentation model, license and checksum. `npm run build` copies the installed MediaPipe runtime/WASM into `public/assets/discuss-it/`.
-- `integrations/adapt/`: ADAPT integration notes and an archived discussion/question-type patch, separate from the recorder.
+- `integrations/adapt/`: the ADAPT install and deploy guide, `recorder.patch` for ADAPT's recorder component, and an archived discussion/question-type patch, separate from the recorder.
 
 Front/rear switching, device selection, mirroring, blur, neutral color and custom-photo backgrounds are supported before each take. Effects are encoded into the saved recording. HEIC/HEIF needs native browser codec support; otherwise use JPG/PNG/WebP. Photos are limited to 20 MB/50 megapixels and normalized to at most 640 pixels per side. Video is approximately 15 fps, with five-minute and 75 MB local stop thresholds. Audio-only is supported.
 
@@ -43,15 +43,9 @@ recorder.dispose() // Also call on navigation/unmount.
 
 ## Add it to LibreTexts ADAPT
 
-LT's ADAPT (`master`) already has Discuss-It; the steps below add the recorder to it, and that is the supported path. `integrations/adapt/feature.patch` is archived: it adds a separate Discuss-It backend, viewer and question type built against a non-public ADAPT baseline from before Laravel 12, and it does not apply to `master`. See [ADAPT integration](integrations/adapt/README.md).
+LT's ADAPT (`master`) already has Discuss-It. Follow [the ADAPT install and deploy guide](integrations/adapt/README.md): copy the recorder files from a release tag, apply [`recorder.patch`](integrations/adapt/recorder.patch), install MediaPipe 0.10.35, run `npm run test:recorder`, build with `npm run production`, and check the asset CDN on Vapor. The patch replaces the capture code in `NativeAudioVideoRecorder.vue`, which records discussion comments, `submission` uploads and `submitted-work` uploads, so one change covers all three; the server side does not change.
 
-LT's Discuss-It records video and audio comments with `resources/js/components/NativeAudioVideoRecorder.vue` (last changed in `e33e6d3a9`, 2025-11-20). The same component records `submission` and `submitted-work` uploads, so one change covers all three.
-
-1. Copy `resources/js/media/recording/`, `resources/js/components/recording/`, `resources/vendor/discuss-it/` and `scripts/build-discuss-it-assets.cjs`, add `@mediapipe/tasks-vision@0.10.35`, and serve the runtime assets as described above. When `ASSET_URL` sends ADAPT's built assets to a CDN, pass `asset-base` as that URL followed by `/assets/discuss-it/`.
-2. In `NativeAudioVideoRecorder.vue`, replace the `getUserMedia`/`MediaRecorder` code in `startRecording()` and `stopRecording()` with `VideoRecorder.vue` (pass `audio-only` when `recordingType` is `audio`), or call `Recorder.js` directly.
-3. Keep emitting `startVideoRecording` and `stopVideoRecording` when recording actually starts and stops: `DiscussItViewer.vue` uses them for the minimum-length countdown. Emit them from `VideoRecorder.vue`'s `recording` event (`true` when a take starts, `false` when it ends), not from `busy`, which is also true during the preview. If you call `Recorder.js` directly, use its `recording` state.
-4. On `recorded`, keep the result until the student submits, then pass `result.blob` to the existing `uploadRecording()`. LT's pre-signed upload, storage, threads and permissions stay as they are.
-5. Send `result.mimeType` and `result.extension` with the upload. The component currently labels every video `video/webm` and `temp.webm`, including MP4 that Safari records on iPhone.
+`integrations/adapt/feature.patch` is archived: it adds a separate Discuss-It backend, viewer and question type built against a non-public ADAPT baseline from before Laravel 12, and it does not apply to `master`.
 
 ## Tests and device status
 
