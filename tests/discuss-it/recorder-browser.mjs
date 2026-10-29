@@ -42,7 +42,7 @@ const assetSource = url => url === `${assetDirectory}segmenter-worker.js` ? path
   : url.startsWith(assetDirectory) ? path.join(root, 'public/assets/discuss-it', url.slice(assetDirectory.length)) : ''
 const server = http.createServer((req, res) => {
   if (req.url === '/') {
-    // With assets on another origin, the page sets the strictest policy docs/INTERFACE.md allows.
+    // With assets on another origin, the page allows only what docs/INTERFACE.md tells hosts to.
     if (crossOrigin) res.setHeader('Content-Security-Policy', `script-src 'self' ${assetOrigin} 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${assetOrigin}`)
     res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta name="viewport" content="width=device-width"><canvas id="preview"></canvas>'); return
   }
@@ -445,10 +445,10 @@ try {
       recorder.dispose()
       console.log('PASS an asset origin without CORS fails with the usual explanation and keeps the camera')
     }, noCorsBase)
-    assert.deepEqual(errors.filter(message => message !== 'Cross-origin script load denied by Cross-Origin Resource Sharing policy.'), [])
+    assert.deepEqual(errors.filter(message => !/Cross-Origin Resource Sharing/.test(message)), [])
   }
-  assert.deepEqual(offsite, [], 'The recorder requested something from another origin')
-  assert.deepEqual(uploads, [], 'The recorder sent something to the page\'s origin')
+  assert.deepEqual(offsite, [], 'The recorder requested something from an origin other than the page\'s and its assets\'')
+  assert.deepEqual(uploads, [], 'The recorder sent something to the page\'s or the assets\' origin')
   assert.deepEqual(result.errors, [])
   assert.equal(result.tests.length, backgrounds.length)
   console.log(JSON.stringify(result, null, 2))

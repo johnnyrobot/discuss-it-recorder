@@ -22,13 +22,13 @@ export default class BackgroundProcessor {
     if (appleMobile()) return this.initMain()
     let bootstrap
     try {
-      const worker = `${this.assets}segmenter-worker.js`
-      if (new URL(worker).origin === location.origin) this.worker = new Worker(worker)
+      const workerUrl = `${this.assets}segmenter-worker.js`
+      if (new URL(workerUrl).origin === location.origin) this.worker = new Worker(workerUrl)
       else {
         // Browsers start a worker only from the page's own origin. For a directory on another
         // origin the host controls, such as its asset CDN, a same-origin blob: script tells
         // the worker its directory and loads it from there.
-        bootstrap = URL.createObjectURL(new Blob([`self.discussItAssetBase = ${JSON.stringify(this.assets)}\nimportScripts(${JSON.stringify(worker)})\n`], { type: 'text/javascript' }))
+        bootstrap = URL.createObjectURL(new Blob([`self.discussItAssetBase = ${JSON.stringify(this.assets)}\nimportScripts(${JSON.stringify(workerUrl)})\n`], { type: 'text/javascript' }))
         this.worker = new Worker(bootstrap)
       }
       await this.request({ type: 'init' }, [], 45000)
