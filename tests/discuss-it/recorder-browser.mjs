@@ -133,9 +133,9 @@ try {
         const context = pixels.getContext('2d', { willReadFrequently: true }); context.drawImage(player, 0, 0, 640, 480)
         const left = context.getImageData(100, 240, 1, 1).data
         const right = context.getImageData(540, 240, 1, 1).data
-        const sampled = `(left ${left}, right ${right})`
-        if (left[3] !== 255 || right[3] !== 255) throw Error(`Saved video had no frame to sample ${sampled}`)
-        if (!(left[2] > left[0] + 100 && right[0] > right[2] + 100)) throw Error(`Saved video is not mirrored ${sampled}`)
+        const pixelText = `(left ${left}, right ${right})`
+        if (left[3] !== 255 || right[3] !== 255) throw Error(`Saved video had no frame to sample ${pixelText}`)
+        if (!(left[2] > left[0] + 100 && right[0] > right[2] + 100)) throw Error(`Saved video is not mirrored ${pixelText}`)
         console.log('PASS encoded video pixels are mirrored')
       }
       player.pause(); URL.revokeObjectURL(player.src)
