@@ -2,7 +2,7 @@
 
 Accepted 2026-10-25.
 
-Learner video and its processing stay on the device, and the recorder reports nothing anywhere: no analytics, telemetry or usage metrics. A recording leaves the browser only when the host uploads it or the user downloads it. MediaPipe Tasks Vision 1.x breaks this. By default it POSTs usage metrics to Google (`https://odml.pa.googleapis.com/v1/log`, with an API key in an `x-goog-api-key` header), and 1.1.1's README and type definitions offer no way to turn that off. So the recorder stays on 0.10.x, pinned exactly at 0.10.35, and adopts no release or option that reports usage or otherwise phones home. The segmentation model, worker and WASM stay self-hosted: the host serves them from its own origin (`assetBase`), and nothing is fetched from Google or a CDN at runtime.
+Learner video and its processing stay on the device, and the recorder reports nothing anywhere: no analytics, telemetry or usage metrics. A recording leaves the browser only when the host uploads it or the user downloads it. MediaPipe Tasks Vision 1.x breaks this. By default it POSTs usage metrics to Google (`https://odml.pa.googleapis.com/v1/log`, with an API key in an `x-goog-api-key` header), and 1.1.1's README and type definitions offer no way to turn that off. So the recorder stays on 0.10.x, pinned exactly at 0.10.35, and adopts no release or option that reports usage or otherwise phones home. The segmentation model, worker and WASM stay self-hosted: the host serves them from its own origin or its own asset CDN (`assetBase`), and nothing is fetched from Google or any other third party at runtime.
 
 ## Considered options
 
@@ -13,4 +13,6 @@ Learner video and its processing stay on the device, and the recorder reports no
 
 - 0.10.x will stop getting fixes at some point. When it does, revisit this decision rather than work around it. A 0.10.x update is a deliberate change: pin the exact version, run `npm run build`, and the checks below must pass.
 - `npm test` runs `tests/discuss-it/no-telemetry.mjs`. It fails unless `package.json`, the lock file and the installed package carry the same exact 0.10.x release and the staged MediaPipe files are byte-identical to that package's, and it fails if any staged asset or recorder source names a Google API host (other than `type.googleapis.com`, which only prefixes protobuf type names), Google's API key header, or a known analytics or logging endpoint.
-- The recorder browser test aborts any request to another origin, from the page or its worker, and fails if there was one.
+- The recorder browser test aborts any request to another origin, from the page or its worker, and fails if there was one. In its cross-origin variants, the test's own second local origin stands in for the host's asset CDN and is the only other origin allowed.
+
+Amended 2026-10-29 (LT-177): "self-hosted" used to mean the app's own origin only. It now also covers an asset CDN the host controls, because some hosts serve built assets from one. The promise is unchanged: nothing comes from Google or any other third party.

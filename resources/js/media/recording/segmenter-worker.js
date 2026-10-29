@@ -1,16 +1,20 @@
 /* global importScripts */
 // Classic worker is deliberate: MediaPipe's WASM loader uses importScripts.
-// Runtime assets sit beside this script, so hosts may serve them from any directory.
+// Runtime assets sit beside this script, so hosts may serve them from any directory. When
+// they are on another origin, the recorder starts this script from a blob: bootstrap, whose
+// location says nothing about them, so the bootstrap names their directory instead.
+const assetBase = self.discussItAssetBase || self.location.href
+const asset = name => new URL(name, assetBase).href
 self.exports = {}
-importScripts(new URL('vision_bundle.js', self.location.href).href)
+importScripts(asset('vision_bundle.js'))
 let segmenter
 self.onmessage = async ({ data }) => {
   try {
     if (data.type === 'init') {
       const vision = self.exports
-      const files = await vision.FilesetResolver.forVisionTasks(new URL('wasm', self.location.href).href)
+      const files = await vision.FilesetResolver.forVisionTasks(asset('wasm'))
       segmenter = await vision.ImageSegmenter.createFromOptions(files, {
-        baseOptions: { modelAssetPath: new URL('selfie_segmenter.tflite', self.location.href).href, delegate: 'CPU' },
+        baseOptions: { modelAssetPath: asset('selfie_segmenter.tflite'), delegate: 'CPU' },
         runningMode: 'VIDEO',
         outputCategoryMask: false,
         outputConfidenceMasks: true

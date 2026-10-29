@@ -6,7 +6,7 @@
 // Test settings come only from the arguments and this list, so flags exported in the
 // caller's shell cannot silently change what a variant runs.
 import { spawnSync } from 'node:child_process'
-const settings = ['BROWSER', 'IPHONE', 'FAIL_WORKER', 'FAIL_ENUMERATION', 'IMAGE', 'BACKGROUND', 'DEMO_URL']
+const settings = ['BROWSER', 'IPHONE', 'FAIL_WORKER', 'FAIL_ENUMERATION', 'IMAGE', 'BACKGROUND', 'DEMO_URL', 'CROSS_ORIGIN']
 const variants = {
   'no-telemetry': ['tests/discuss-it/no-telemetry.mjs'],
   photos: ['tests/discuss-it/background-image.mjs'],
@@ -16,6 +16,9 @@ const variants = {
   iphone: ['IPHONE=1', 'tests/discuss-it/recorder-browser.mjs'],
   'worker-failure': ['FAIL_WORKER=1', 'tests/discuss-it/recorder-browser.mjs'],
   'enumeration-failure': ['FAIL_ENUMERATION=1', 'tests/discuss-it/recorder-browser.mjs'],
+  'cross-origin': ['CROSS_ORIGIN=1', 'tests/discuss-it/recorder-browser.mjs'],
+  'cross-origin:webkit': ['BROWSER=webkit', 'CROSS_ORIGIN=1', 'tests/discuss-it/recorder-browser.mjs'],
+  'cross-origin:iphone': ['IPHONE=1', 'CROSS_ORIGIN=1', 'tests/discuss-it/recorder-browser.mjs'],
   ui: ['tests/discuss-it/iphone-recovery.mjs'],
   'ui:photo': ['IMAGE=1', 'tests/discuss-it/iphone-recovery.mjs'],
   'ui:decoder': ['IMAGE=decoder', 'tests/discuss-it/iphone-recovery.mjs'],

@@ -30,9 +30,9 @@ jobs:
       - run: npm run build
       - run: npm test
       # Playwright's Linux WebKit has no MediaRecorder, so the variants that record in
-      # WebKit (webkit, ui, ui:photo, ui:decoder) run in the macOS job. These record in
-      # Chromium. The HEIC check needs macOS sips and is skipped here.
-      - run: node tests/run.mjs photos:chromium iphone worker-failure enumeration-failure demo demo:site
+      # WebKit (webkit, cross-origin:webkit, ui, ui:photo, ui:decoder) run in the macOS
+      # job. These record in Chromium. The HEIC check needs macOS sips and is skipped here.
+      - run: node tests/run.mjs photos:chromium iphone worker-failure enumeration-failure cross-origin cross-origin:iphone demo demo:site
 
   macos:
     name: macOS (npm run test:all, Chromium and WebKit)

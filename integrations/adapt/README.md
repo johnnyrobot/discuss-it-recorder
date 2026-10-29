@@ -2,7 +2,7 @@
 
 ## Recommended: add only the recorder
 
-LT's ADAPT (`master`) already has Discuss-It, so **integrate only the recorder** into its existing response UI and upload pipeline. There is no need to replace the discussion subsystem. Replace the raw `getUserMedia`/`MediaRecorder` code in `resources/js/components/NativeAudioVideoRecorder.vue` with the Vue adapter or `Recorder.js`, as [the main README](../../README.md#add-it-to-libretexts-adapt) describes step by step: copy the recorder resources, install `@mediapipe/tasks-vision@0.10.35`, stage same-origin assets, and pass the adapter's `recorded` result to the existing upload only after the student submits.
+LT's ADAPT (`master`) already has Discuss-It, so **integrate only the recorder** into its existing response UI and upload pipeline. There is no need to replace the discussion subsystem. Replace the raw `getUserMedia`/`MediaRecorder` code in `resources/js/components/NativeAudioVideoRecorder.vue` with the Vue adapter or `Recorder.js`, as [the main README](../../README.md#add-it-to-libretexts-adapt) describes step by step: copy the recorder resources, install `@mediapipe/tasks-vision@0.10.35`, stage the runtime assets on ADAPT's own origin or on its asset CDN with CORS, and pass the adapter's `recorded` result to the existing upload only after the student submits.
 
 ## Archived: `feature.patch`
 
