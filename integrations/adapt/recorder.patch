@@ -21,7 +21,7 @@ index 3167e88..33b7e91 100644
 +/public/assets/discuss-it/
 diff --git a/docs/recorder-integration.md b/docs/recorder-integration.md
 new file mode 100644
-index 0000000..ab3e833
+index 0000000..4e4ded6
 --- /dev/null
 +++ b/docs/recorder-integration.md
 @@ -0,0 +1,102 @@
@@ -96,7 +96,7 @@ index 0000000..ab3e833
 +
 +## Checks
 +
-+Use Node 22.2 or newer (the staging script uses `fs.cpSync`).
++Use Node 22.2 or newer, the version the recorder supports.
 +
 +```sh
 +npx playwright install chromium webkit

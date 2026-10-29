@@ -2,6 +2,8 @@
 
 LibreTexts ADAPT already has Discuss-It. Its `resources/js/components/NativeAudioVideoRecorder.vue` records discussion comments, `submission` uploads and `submitted-work` uploads with its own `getUserMedia`/`MediaRecorder` code. This guide replaces that code with the recorder, so one change covers all three. The server side does not change: the pre-signed upload, storage, threads and permissions stay as they are.
 
+One ADAPT bug is outside this change. At `1486f96c`, the phone audio recorder in `resources/js/components/SubmitWork.vue` listens for `saveComment`, but the component has emitted `storeSubmittedWork` for `submitted-work` since `e33e6d3a`. A phone audio take of submitted work therefore uploads, but `SubmitWork.vue` never saves it. The patch does not touch `SubmitWork.vue`; fix that listener separately (`@storeSubmittedWork`, as its video recorder already uses).
+
 Follow it from top to bottom in an ADAPT checkout. It was last checked on 2026-10-29 against ADAPT `master` at `1486f96c` (2026-10-27), with Node 22.20.0, Laravel Mix 4.1.4 and webpack 4.44.1 (see [validation](../../docs/VALIDATION.md)).
 
 ## What changes in ADAPT
@@ -26,7 +28,7 @@ The patch leaves out `package-lock.json`, which step 4 updates. At `1486f96c`, `
 
 ## 1. Before you start
 
-- Use Node 22.2 or newer (`node --version`): the asset script uses `fs.cpSync`. The machine that runs the Vapor build needs it too.
+- Use Node 22.2 or newer (`node --version`), the version the recorder supports (`engines` in its `package.json`). The machine that runs the Vapor build needs it too, and so does any other build of ADAPT's front end, such as its root `Dockerfile`, which installs the distribution's Node.
 - Start on a new branch in a clean ADAPT checkout: `git status` shows nothing to commit.
 - Get the recorder at the release tag:
 
@@ -93,6 +95,11 @@ npm run production
 
 Commit the copied files, the patched files and `package-lock.json`. `public/assets/discuss-it/` is generated and ignored by Git.
 
+Afterwards:
+
+- Keep the copied files as they are. ADAPT's `npm run lint` fixes files under `resources/js` in place, so revert any change it makes to the copied recorder files.
+- `npm run watch` stages the assets, because it runs `development`. `npm run hot` does not: run `npm run build:recorder-assets` once before it.
+
 ## Deploy on Vapor
 
 ADAPT's `vapor.yml` builds with `npm ci && npm run prod`. `prod` runs `production`, whose `preproduction` hook stages `public/assets/discuss-it/`, so the deploy needs no extra step. Vapor uploads `public/` to S3 and serves it from CloudFront at `ASSET_URL`, not from the app's own domain.
@@ -106,13 +113,13 @@ APP_ORIGIN='https://<staging app host>'
 ASSETS='<staging ASSET_URL>/assets/discuss-it'
 for file in segmenter-worker.js wasm/vision_wasm_internal.wasm selfie_segmenter.tflite; do
   echo "$file"
-  curl -sI -H "Origin: $APP_ORIGIN" "$ASSETS/$file" | grep -iE '^(HTTP/|access-control-allow-origin|content-type)'
+  curl -s -o /dev/null -D - -H "Origin: $APP_ORIGIN" "$ASSETS/$file" | grep -iE '^(HTTP/|access-control-allow-origin|content-type)'
 done
 ```
 
-Expect status 200 and `access-control-allow-origin` (the app's origin or `*`) on all three, and `content-type: application/wasm` on the `.wasm`. Then sign in to staging, open a Discuss-It question and record one take with **Blur**: the preview blurs, and after **Submit recording** the take uploads and plays back.
+Each request is a GET, as the browser sends. Expect status 200 and `access-control-allow-origin` (the app's origin or `*`) on all three, and `content-type: application/wasm` on the `.wasm`. Then sign in to staging, open a Discuss-It question and record one take with **Blur**: the preview blurs, and after **Submit recording** the take uploads and plays back.
 
-- **If `access-control-allow-origin` is missing**, add a CORS response headers policy to the CloudFront distribution that serves `ASSET_URL` (the AWS managed `SimpleCORS` policy sends `*`), invalidate `/assets/discuss-it/*`, and run the check again. If the `.wasm` has another content type, fix it at the CDN or bucket: the [interface contract](../../docs/INTERFACE.md) requires `application/wasm`.
+- **If `access-control-allow-origin` is missing**, add a CORS response headers policy to the CloudFront distribution that serves `ASSET_URL` (the AWS managed `SimpleCORS` policy sends `*`), invalidate `/assets/discuss-it/*`, and run the check again. If the `.wasm` has another content type, set `application/wasm` at the CDN or bucket: with any other type the browser cannot compile it as it downloads, and MediaPipe falls back to a slower load.
 - **Content-Security-Policy.** At `1486f96c` ADAPT sends one only for its sketcher page. If the deployment adds one for the app, it must allow the asset origin in `script-src` and `connect-src`, `'wasm-unsafe-eval'` in `script-src`, and `blob:` in `worker-src`.
 
 **Not verified by us:** this section's Vapor and CloudFront behaviour. We have no Vapor project, and we have not checked LT's staging or production. The tests prove the cross-origin path only against a second local origin that sends CORS headers (`npm run test:cross-origin` here, and the cross-origin case of `npm run test:recorder` in ADAPT). The staging check above is for LT engineers to run.

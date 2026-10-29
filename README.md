@@ -1,6 +1,6 @@
 # Discuss-It recorder
 
-Focused developer handoff for LibreTexts: **not an ADAPT fork and not a complete LMS**. This repo contains the reusable on-device recorder, a Vue 2 adapter, a no-login/no-upload demo, tests, and an archived ADAPT integration patch kept for reference. No ADAPT history, credentials, user data, recordings, or infrastructure configuration is included.
+Focused developer handoff for LibreTexts: **not an ADAPT fork and not a complete LMS**. This repo contains the reusable on-device recorder, a Vue 2 adapter, a no-login/no-upload demo, tests, an ADAPT install guide with `recorder.patch`, and an archived ADAPT integration patch kept for reference. No ADAPT history, credentials, user data, recordings, or infrastructure configuration is included.
 
 ## Try it without ADAPT
 
